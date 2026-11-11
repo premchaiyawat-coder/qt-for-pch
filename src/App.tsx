@@ -31,6 +31,8 @@ import {
 import { auth, googleProvider } from './firebase';
 import { fileToResizedJpegDataUrl } from './utils/imageHelper';
 import {
+  addDaysToDate,
+  calculateDaysBetween,
   calculateFinancialSummary,
   CustomerRecord,
   DEFAULT_CUSTOMERS,
@@ -469,6 +471,22 @@ export default function App() {
       ...fields,
     }));
     markLocalWorkspaceEdited();
+  };
+
+  // Handle changing quotation validity days (Valid Until) with automatic addition
+  const handleValidDaysChange = (days: number) => {
+    const safeDays = Math.max(0, days);
+    const newDueDate = addDaysToDate(docSet.issueDate, safeDays);
+
+    let newNotes = docSet.notes;
+    if (newNotes && /กำหนดยืนราคา\s+\d+\s+วัน/.test(newNotes)) {
+      newNotes = newNotes.replace(/กำหนดยืนราคา\s+\d+\s+วัน/, `กำหนดยืนราคา ${safeDays} วัน`);
+    }
+
+    updateDocFields({
+      dueDate: newDueDate,
+      notes: newNotes,
+    });
   };
 
   // Auto-run next sequential Quotation Number & companion numbers
@@ -1475,14 +1493,16 @@ export default function App() {
                     />
                   </div>
 
-                  {/* Dates formatted strictly as DD/MM/YYYY (วัน/เดือน/ปี) */}
-                  <div className="sm:col-span-6">
-                    <label className="block font-semibold text-slate-700 mb-1">
+                  {/* Dates formatted strictly as DD/MM/YYYY (วัน/เดือน/ปี) with automatic valid days addition */}
+                  <div className="sm:col-span-4">
+                    <label className="block font-semibold text-slate-700 mb-1 text-xs">
                       วันที่ออกเอกสาร (วัน/เดือน/ปี)
                     </label>
                     <DateInputDMY
                       value={docSet.issueDate}
                       onChange={(newDate) => {
+                        const days = calculateDaysBetween(docSet.issueDate, docSet.dueDate) || 15;
+                        const newDueDate = addDaysToDate(newDate, days);
                         const oldYm = (docSet.issueDate || '').slice(0, 7);
                         const newYm = newDate.slice(0, 7);
                         if (newYm && newYm !== oldYm) {
@@ -1493,25 +1513,60 @@ export default function App() {
                           );
                           updateDocFields({
                             issueDate: newDate,
+                            dueDate: newDueDate,
                             quotationNo: generated.quotationNo,
                             billingNoteNo: generated.billingNoteNo,
                             invoiceNo: generated.invoiceNo,
                             receiptNo: generated.receiptNo,
                           });
                         } else {
-                          updateDocFields({ issueDate: newDate });
+                          updateDocFields({ issueDate: newDate, dueDate: newDueDate });
                         }
                       }}
                     />
                   </div>
 
-                  <div className="sm:col-span-6">
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      วันครบกำหนดชำระ / ยืนราคาถึงวันที่ (วัน/เดือน/ปี)
+                  <div className="sm:col-span-4">
+                    <label className="block font-semibold text-slate-700 mb-1 text-xs">
+                      จำนวนวัน Valid Until
+                    </label>
+                    <div className="relative rounded-md shadow-xs">
+                      <input
+                        type="number"
+                        min="0"
+                        max="365"
+                        value={calculateDaysBetween(docSet.issueDate, docSet.dueDate) || ''}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          const days = raw === '' ? 0 : parseInt(raw, 10);
+                          handleValidDaysChange(Number.isFinite(days) ? days : 0);
+                        }}
+                        placeholder="15"
+                        className="w-full px-3 py-2 text-xs border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-600 focus:border-blue-600 pr-12 font-semibold text-slate-900 bg-white"
+                      />
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-xs text-slate-400 font-medium">
+                        วัน
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-4">
+                    <label className="block font-semibold text-slate-700 mb-1 text-xs">
+                      ยืนราคาถึงวันที่ (Valid Until)
                     </label>
                     <DateInputDMY
                       value={docSet.dueDate}
-                      onChange={(newDate) => updateDocFields({ dueDate: newDate })}
+                      onChange={(newDate) => {
+                        const days = calculateDaysBetween(docSet.issueDate, newDate);
+                        let newNotes = docSet.notes;
+                        if (newNotes && /กำหนดยืนราคา\s+\d+\s+วัน/.test(newNotes) && days > 0) {
+                          newNotes = newNotes.replace(
+                            /กำหนดยืนราคา\s+\d+\s+วัน/,
+                            `กำหนดยืนราคา ${days} วัน`
+                          );
+                        }
+                        updateDocFields({ dueDate: newDate, notes: newNotes });
+                      }}
                     />
                   </div>
                 </div>

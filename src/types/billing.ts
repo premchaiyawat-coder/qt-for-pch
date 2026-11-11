@@ -275,6 +275,38 @@ export function formatDateDMY(dateStr: string | undefined | null): string {
 }
 
 /**
+ * Adds a specific number of days to an ISO date string (YYYY-MM-DD).
+ */
+export function addDaysToDate(dateStr: string | undefined | null, days: number): string {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.trim().split('-').map(Number);
+  if (!y || !m || !d) return dateStr;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() + (Number(days) || 0));
+  const newY = date.getUTCFullYear();
+  const newM = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const newD = String(date.getUTCDate()).padStart(2, '0');
+  return `${newY}-${newM}-${newD}`;
+}
+
+/**
+ * Calculates the difference in days between two ISO date strings (startDate to endDate).
+ */
+export function calculateDaysBetween(
+  startDateStr: string | undefined | null,
+  endDateStr: string | undefined | null
+): number {
+  if (!startDateStr || !endDateStr) return 0;
+  const [y1, m1, d1] = startDateStr.trim().split('-').map(Number);
+  const [y2, m2, d2] = endDateStr.trim().split('-').map(Number);
+  if (!y1 || !m1 || !d1 || !y2 || !m2 || !d2) return 0;
+  const t1 = Date.UTC(y1, m1 - 1, d1);
+  const t2 = Date.UTC(y2, m2 - 1, d2);
+  const diffDays = Math.round((t2 - t1) / (1000 * 60 * 60 * 24));
+  return Math.max(0, diffDays);
+}
+
+/**
  * Automatically generates running document numbers (QT, BN, INV, RC) based on YYYYMM of issueDate
  * and the highest existing running number for that month.
  */
