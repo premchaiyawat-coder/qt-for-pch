@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signInWithPopup, signOut, sendEmailVerification, User } from 'firebase/auth';
 import {
   Download,
   Printer,
@@ -22,6 +22,8 @@ import {
   AlertCircle,
   FilePlus2,
   RefreshCw,
+  Mail,
+  ShieldCheck,
 } from 'lucide-react';
 import { auth, googleProvider } from './firebase';
 import {
@@ -54,6 +56,7 @@ import { SavedDocumentSetsView } from './components/SavedDocumentSetsView';
 import { SellerProfileView } from './components/SellerProfileView';
 import { DateInputDMY } from './components/DateInputDMY';
 import { exportSelectedPagesToPdf } from './utils/pdfExport';
+import { AuthModal } from './components/AuthModal';
 
 type ActiveWorkspaceTab = 'editor' | 'customers' | 'archive' | 'seller';
 type PreviewLayoutMode = 'single' | 'all4';
@@ -80,6 +83,7 @@ export default function App() {
   // Auth & Cloud state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [cloudCustomerIds, setCloudCustomerIds] = useState<Set<string>>(new Set());
   const [cloudDocSetIds, setCloudDocSetIds] = useState<Set<string>>(new Set());
 
@@ -636,24 +640,36 @@ export default function App() {
     }
   };
 
-  // Google Sign-In / Sign-Out
-  const handleGoogleSignIn = async () => {
+  // Sign Out
+  const handleSignOut = async () => {
+    await signOut(auth);
+    showToast('ออกจากระบบเรียบร้อยแล้ว');
+  };
+
+  // Email verification handlers
+  const handleResendVerificationEmail = async () => {
+    if (!auth.currentUser) return;
     try {
-      const cred = await signInWithPopup(auth, googleProvider);
-      if (cred.user) {
-        showToast(`เข้าสู่ระบบสำเร็จ (${cred.user.email})`);
-      }
+      await sendEmailVerification(auth.currentUser);
+      showToast(`ส่งลิงก์ยืนยันตัวตนไปยัง ${auth.currentUser.email} เรียบร้อยแล้ว`);
     } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : 'ยกเลิกการเข้าสู่ระบบด้วย Google',
-        'error'
-      );
+      showToast(err instanceof Error ? err.message : 'ไม่สามารถส่งอีเมลยืนยันได้', 'error');
     }
   };
 
-  const handleGoogleSignOut = async () => {
-    await signOut(auth);
-    showToast('ออกจากระบบเรียบร้อยแล้ว');
+  const handleReloadUserVerification = async () => {
+    if (!auth.currentUser) return;
+    try {
+      await auth.currentUser.reload();
+      setCurrentUser(auth.currentUser ? ({ ...auth.currentUser } as User) : null);
+      if (auth.currentUser.emailVerified) {
+        showToast('ยืนยันอีเมลสำเร็จแล้ว ระบบพร้อมซิงค์ข้อมูลบน Cloud Firestore');
+      } else {
+        showToast('ยังไม่พบการยืนยันอีเมล กรุณากดลิงก์ในอีเมลของคุณก่อน', 'error');
+      }
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'ไม่สามารถตรวจสอบสถานะได้', 'error');
+    }
   };
 
   const activePageMeta =
@@ -852,12 +868,22 @@ export default function App() {
 
             {currentUser ? (
               <div className="inline-flex items-center gap-2 pl-2 border-l border-slate-300 text-xs text-slate-600">
-                <span className="truncate max-w-[140px]" title={currentUser.email || ''}>
-                  {currentUser.email}
+                <span className="inline-flex items-center gap-1.5 truncate max-w-[170px]" title={currentUser.email || ''}>
+                  <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <span className="truncate">{currentUser.email}</span>
                 </span>
+                {currentUser.emailVerified ? (
+                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 hidden sm:inline" title="ยืนยันอีเมลแล้ว">
+                    ยืนยันแล้ว
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 hidden sm:inline" title="ยังไม่ได้ยืนยันอีเมล">
+                    รอการยืนยัน
+                  </span>
+                )}
                 <button
                   type="button"
-                  onClick={handleGoogleSignOut}
+                  onClick={handleSignOut}
                   className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <LogOut className="w-3 h-3" />
@@ -867,16 +893,44 @@ export default function App() {
             ) : (
               <button
                 type="button"
-                onClick={handleGoogleSignIn}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
               >
-                <LogIn className="w-3.5 h-3.5 text-blue-700" />
-                <span>เชื่อมต่อ Cloud</span>
+                <Mail className="w-3.5 h-3.5" />
+                <span>เข้าสู่ระบบด้วย Email / คลาวด์</span>
               </button>
             )}
           </div>
         </div>
       </div>
+
+      {/* Unverified Email Alert Banner */}
+      {currentUser && !currentUser.emailVerified && (
+        <div className="no-print bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              บัญชี <strong>{currentUser.email}</strong> ยังไม่ได้คลิกลิงก์ยืนยันในอีเมล กรุณายืนยันตัวตนเพื่อเริ่มซิงค์ข้อมูลบน Cloud Firestore ตามมาตรการความปลอดภัย
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleResendVerificationEmail}
+              className="px-2.5 py-1 text-xs font-semibold bg-white border border-amber-300 rounded hover:bg-amber-100 transition-colors cursor-pointer"
+            >
+              ส่งอีเมลยืนยันอีกครั้ง
+            </button>
+            <button
+              type="button"
+              onClick={handleReloadUserVerification}
+              className="px-2.5 py-1 text-xs font-semibold bg-amber-700 text-white rounded hover:bg-amber-800 transition-colors cursor-pointer"
+            >
+              ฉันกดยืนยันแล้ว (รีเฟรชสถานะ)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Toast Notification Banner */}
       {toastMessage && (
@@ -1684,6 +1738,16 @@ export default function App() {
           )
         )}
       </div>
+
+      {/* Email / Cloud Auth Modal */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        onSuccess={(email) => {
+          showToast(`เข้าสู่ระบบสำเร็จ (${email})`);
+        }}
+      />
     </div>
   );
 }
+
