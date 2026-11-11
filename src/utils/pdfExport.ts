@@ -59,7 +59,9 @@ export async function exportSelectedPagesToPdf(
     .slice(0, 35);
 
   const suffix =
-    orderedPages.length === 4
+    orderedPages.length === DOCUMENT_PAGES.length
+      ? 'ครบชุดทุกหน้า'
+      : orderedPages.length === 4
       ? 'ครบชุด4หน้า'
       : orderedPages.map((p) => p.thaiTitle.split(' ')[0]).join('-');
 

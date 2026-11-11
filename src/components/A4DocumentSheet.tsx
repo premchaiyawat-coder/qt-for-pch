@@ -22,6 +22,36 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
   sheetRef,
   className = '',
 }) => {
+  // Sub-pages under "5. เอกสารเพิ่มเติม": Pure blank A4 page showing ONLY the uploaded image
+  if (pageMeta.key === 'attachmentIdCard' || pageMeta.key === 'attachmentBankBook') {
+    const isIdCard = pageMeta.key === 'attachmentIdCard';
+    const imageUrl = isIdCard ? docSet.idCardImageDataUrl : docSet.bankBookImageDataUrl;
+    const altLabel = isIdCard ? 'สำเนาบัตรประชาชน' : 'สำเนาสมุดธนาคาร';
+
+    return (
+      <div
+        ref={sheetRef}
+        data-doc-page={pageMeta.key}
+        className={`a4-sheet font-doc bg-white text-slate-900 p-10 flex items-center justify-center border border-slate-200 shadow-sm ${className}`}
+      >
+        {imageUrl ? (
+          <img
+            src={imageUrl}
+            alt={altLabel}
+            referrerPolicy="no-referrer"
+            className="max-w-full max-h-[1040px] object-contain"
+          />
+        ) : (
+          <div className="no-print text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-lg px-8 py-12">
+            หน้ากระดาษเปล่าสำหรับแสดงภาพ <span className="font-semibold text-slate-600">{altLabel}</span> เท่านั้น
+            <br />
+            (กรุณาอัปโหลดรูป{altLabel}ในหมวด 04 ด้านซ้าย หรือในหน้าข้อมูลผู้ขาย)
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const docNumber = docSet[pageMeta.docNumberField] || '-';
   const secondaryDateRaw =
     pageMeta.key === 'receipt'
@@ -206,173 +236,174 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
         </div>
 
         {/* Line Items Table */}
-        <div className="mt-4">
-          <table className="w-full border-collapse text-xs">
-            <thead>
-              <tr className="border-y-2 border-slate-900 text-slate-900 bg-slate-50/80">
-                <th className="py-2.5 px-2 text-center font-bold w-12">ลำดับ</th>
-                <th className="py-2.5 px-3 text-left font-bold">
-                  รายการรายละเอียดงาน / บริการ (Description)
-                </th>
-                <th className="py-2.5 px-2 text-right font-bold w-20">จำนวน</th>
-                <th className="py-2.5 px-2 text-center font-bold w-20">หน่วย</th>
-                <th className="py-2.5 px-3 text-right font-bold w-28">ราคาต่อหน่วย</th>
-                <th className="py-2.5 px-3 text-right font-bold w-32">จำนวนเงิน (บาท)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 border-b border-slate-300">
-              {docSet.items.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-8 text-center text-slate-400">
-                    ยังไม่มีรายการงาน — กรุณาเพิ่มรายการในแผงแก้ไขด้านซ้าย
-                  </td>
-                </tr>
-              ) : (
-                docSet.items.map((item, idx) => {
-                  const lineTotal = (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
-                  return (
-                    <tr key={item.id || idx} className="align-top">
-                      <td className="py-3 px-2 text-center font-mono-tabular text-slate-600">
-                        {idx + 1}
-                      </td>
-                      <td className="py-3 px-3">
-                        <div className="font-semibold text-slate-900 leading-snug">
-                          {item.description || '-'}
-                        </div>
-                        {item.subDescription && (
-                          <div className="text-[11px] text-slate-600 mt-1 leading-relaxed whitespace-pre-line">
-                            {item.subDescription}
-                          </div>
-                        )}
-                      </td>
-                      <td className="py-3 px-2 text-right font-mono-tabular text-slate-900">
-                        {formatCurrency(item.quantity).replace(/\.00$/, '')}
-                      </td>
-                      <td className="py-3 px-2 text-center text-slate-700">
-                        {item.unit || 'งาน'}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono-tabular text-slate-900">
-                        {formatCurrency(item.unitPrice)}
-                      </td>
-                      <td className="py-3 px-3 text-right font-mono-tabular font-semibold text-slate-900">
-                        {formatCurrency(lineTotal)}
+            <div className="mt-4">
+              <table className="w-full border-collapse text-xs">
+                <thead>
+                  <tr className="border-y-2 border-slate-900 text-slate-900 bg-slate-50/80">
+                    <th className="py-2.5 px-2 text-center font-bold w-12">ลำดับ</th>
+                    <th className="py-2.5 px-3 text-left font-bold">
+                      รายการรายละเอียดงาน / บริการ (Description)
+                    </th>
+                    <th className="py-2.5 px-2 text-right font-bold w-20">จำนวน</th>
+                    <th className="py-2.5 px-2 text-center font-bold w-20">หน่วย</th>
+                    <th className="py-2.5 px-3 text-right font-bold w-28">ราคาต่อหน่วย</th>
+                    <th className="py-2.5 px-3 text-right font-bold w-32">จำนวนเงิน (บาท)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 border-b border-slate-300">
+                  {docSet.items.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-slate-400">
+                        ยังไม่มีรายการงาน — กรุณาเพิ่มรายการในแผงแก้ไขด้านซ้าย
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Summary & Tax Breakdown Section */}
-        <div className="grid grid-cols-12 gap-6 mt-4 pt-2">
-          {/* Left 7 Cols: Thai Baht Text, WHT Info, Bank Info, Notes */}
-          <div className="col-span-7 flex flex-col justify-between space-y-3 text-xs">
-            <div className="p-3 bg-slate-50 border border-slate-200">
-              <div className="text-[11px] text-slate-500">
-                จำนวนเงินรวมทั้งสิ้น (ตัวอักษร)
-              </div>
-              <div className="font-bold text-slate-900 text-sm mt-0.5">
-                ({summary.grandTotalThaiText})
-              </div>
-              {docSet.whtEnabled && (
-                <div className="mt-2 pt-2 border-t border-slate-200 flex items-baseline justify-between gap-2 text-[11px]">
-                  <span className="text-slate-600">
-                    ยอดชำระสุทธิหลังหัก ณ ที่จ่าย {docSet.whtRate}%:
-                  </span>
-                  <span className="font-semibold text-slate-900">
-                    ({summary.netPayableThaiText})
-                  </span>
-                </div>
-              )}
+                  ) : (
+                    docSet.items.map((item, idx) => {
+                      const lineTotal =
+                        (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+                      return (
+                        <tr key={item.id || idx} className="align-top">
+                          <td className="py-3 px-2 text-center font-mono-tabular text-slate-600">
+                            {idx + 1}
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="font-semibold text-slate-900 leading-snug">
+                              {item.description || '-'}
+                            </div>
+                            {item.subDescription && (
+                              <div className="text-[11px] text-slate-600 mt-1 leading-relaxed whitespace-pre-line">
+                                {item.subDescription}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-3 px-2 text-right font-mono-tabular text-slate-900">
+                            {formatCurrency(item.quantity).replace(/\.00$/, '')}
+                          </td>
+                          <td className="py-3 px-2 text-center text-slate-700">
+                            {item.unit || 'งาน'}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono-tabular text-slate-900">
+                            {formatCurrency(item.unitPrice)}
+                          </td>
+                          <td className="py-3 px-3 text-right font-mono-tabular font-semibold text-slate-900">
+                            {formatCurrency(lineTotal)}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {pageMeta.key === 'receipt' && (
-              <div className="p-3 bg-emerald-50/60 border border-emerald-200 text-xs space-y-1">
-                <div className="font-bold text-emerald-900">
-                  บันทึกการรับชำระเงิน (Payment Confirmation)
-                </div>
-                <div className="text-slate-700">
-                  วิธีชำระเงิน:{' '}
-                  <span className="font-semibold">
-                    {docSet.paymentMethod || 'โอนเงินผ่านธนาคาร'}
-                  </span>
-                </div>
-                <div className="text-slate-700">
-                  วันที่รับชำระ:{' '}
-                  <span className="font-mono-tabular font-semibold">
-                    {formatDateDMY(docSet.paymentDate || docSet.issueDate)}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {docSet.sellerBankInfo && pageMeta.key !== 'quotation' && (
-              <div className="text-xs text-slate-700">
-                <span className="font-semibold text-slate-900">ช่องทางการชำระเงิน: </span>
-                <span>{docSet.sellerBankInfo}</span>
-              </div>
-            )}
-
-            {docSet.notes && (
-              <div className="text-xs text-slate-600">
-                <div className="font-semibold text-slate-800 mb-0.5">
-                  หมายเหตุ / เงื่อนไข (Terms & Conditions):
-                </div>
-                <div className="whitespace-pre-line leading-relaxed text-[11px]">
-                  {docSet.notes}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Right 5 Cols: Numeric Totals & Withholding Tax Breakdown */}
-          <div className="col-span-5 text-xs space-y-1.5">
-            <div className="flex items-center justify-between py-1 border-b border-slate-200">
-              <span className="text-slate-600">รวมเป็นเงิน (Subtotal)</span>
-              <span className="font-mono-tabular font-medium text-slate-900">
-                {formatCurrency(summary.rawSubtotal)}
-              </span>
-            </div>
-
-            {/* Grand Total Row */}
-            <div className="flex items-center justify-between py-2 px-2.5 bg-slate-900 text-white font-bold text-sm">
-              <span>จำนวนเงินรวมทั้งสิ้น</span>
-              <span className="font-mono-tabular">
-                ฿{formatCurrency(summary.grandTotal)}
-              </span>
-            </div>
-
-            {/* Withholding Tax Deduction Section */}
-            {docSet.whtEnabled && (
-              <div className="pt-1.5 space-y-1.5">
-                <div className="flex items-center justify-between py-1 px-2 bg-amber-50 border border-amber-200 text-amber-950">
-                  <div>
-                    <div className="font-semibold">
-                      หักภาษี ณ ที่จ่าย {docSet.whtRate}%
-                    </div>
-                    {docSet.whtType && (
-                      <div className="text-[10px] text-amber-800">
-                        ({docSet.whtType})
-                      </div>
-                    )}
+            {/* Summary & Tax Breakdown Section */}
+            <div className="grid grid-cols-12 gap-6 mt-4 pt-2">
+              {/* Left 7 Cols: Thai Baht Text, WHT Info, Bank Info, Notes */}
+              <div className="col-span-7 flex flex-col justify-between space-y-3 text-xs">
+                <div className="p-3 bg-slate-50 border border-slate-200">
+                  <div className="text-[11px] text-slate-500">
+                    จำนวนเงินรวมทั้งสิ้น (ตัวอักษร)
                   </div>
-                  <span className="font-mono-tabular font-semibold text-amber-900">
-                    -{formatCurrency(summary.whtAmount)}
+                  <div className="font-bold text-slate-900 text-sm mt-0.5">
+                    ({summary.grandTotalThaiText})
+                  </div>
+                  {docSet.whtEnabled && (
+                    <div className="mt-2 pt-2 border-t border-slate-200 flex items-baseline justify-between gap-2 text-[11px]">
+                      <span className="text-slate-600">
+                        ยอดชำระสุทธิหลังหัก ณ ที่จ่าย {docSet.whtRate}%:
+                      </span>
+                      <span className="font-semibold text-slate-900">
+                        ({summary.netPayableThaiText})
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {pageMeta.key === 'receipt' && (
+                  <div className="p-3 bg-emerald-50/60 border border-emerald-200 text-xs space-y-1">
+                    <div className="font-bold text-emerald-900">
+                      บันทึกการรับชำระเงิน (Payment Confirmation)
+                    </div>
+                    <div className="text-slate-700">
+                      วิธีชำระเงิน:{' '}
+                      <span className="font-semibold">
+                        {docSet.paymentMethod || 'โอนเงินผ่านธนาคาร'}
+                      </span>
+                    </div>
+                    <div className="text-slate-700">
+                      วันที่รับชำระ:{' '}
+                      <span className="font-mono-tabular font-semibold">
+                        {formatDateDMY(docSet.paymentDate || docSet.issueDate)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {docSet.sellerBankInfo && pageMeta.key !== 'quotation' && (
+                  <div className="text-xs text-slate-700">
+                    <span className="font-semibold text-slate-900">ช่องทางการชำระเงิน: </span>
+                    <span>{docSet.sellerBankInfo}</span>
+                  </div>
+                )}
+
+                {docSet.notes && (
+                  <div className="text-xs text-slate-600">
+                    <div className="font-semibold text-slate-800 mb-0.5">
+                      หมายเหตุ / เงื่อนไข (Terms & Conditions):
+                    </div>
+                    <div className="whitespace-pre-line leading-relaxed text-[11px]">
+                      {docSet.notes}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right 5 Cols: Numeric Totals & Withholding Tax Breakdown */}
+              <div className="col-span-5 text-xs space-y-1.5">
+                <div className="flex items-center justify-between py-1 border-b border-slate-200">
+                  <span className="text-slate-600">รวมเป็นเงิน (Subtotal)</span>
+                  <span className="font-mono-tabular font-medium text-slate-900">
+                    {formatCurrency(summary.rawSubtotal)}
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between py-2 px-2.5 border-2 border-slate-900 font-bold text-sm text-slate-900">
-                  <span>ยอดชำระสุทธิ (Net Payable)</span>
+                {/* Grand Total Row */}
+                <div className="flex items-center justify-between py-2 px-2.5 bg-slate-900 text-white font-bold text-sm">
+                  <span>จำนวนเงินรวมทั้งสิ้น</span>
                   <span className="font-mono-tabular">
-                    ฿{formatCurrency(summary.netPayable)}
+                    ฿{formatCurrency(summary.grandTotal)}
                   </span>
                 </div>
+
+                {/* Withholding Tax Deduction Section */}
+                {docSet.whtEnabled && (
+                  <div className="pt-1.5 space-y-1.5">
+                    <div className="flex items-center justify-between py-1 px-2 bg-amber-50 border border-amber-200 text-amber-950">
+                      <div>
+                        <div className="font-semibold">
+                          หักภาษี ณ ที่จ่าย {docSet.whtRate}%
+                        </div>
+                        {docSet.whtType && (
+                          <div className="text-[10px] text-amber-800">
+                            ({docSet.whtType})
+                          </div>
+                        )}
+                      </div>
+                      <span className="font-mono-tabular font-semibold text-amber-900">
+                        -{formatCurrency(summary.whtAmount)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between py-2 px-2.5 border-2 border-slate-900 font-bold text-sm text-slate-900">
+                      <span>ยอดชำระสุทธิ (Net Payable)</span>
+                      <span className="font-mono-tabular">
+                        ฿{formatCurrency(summary.netPayable)}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </div>
       </div>
 
       {/* Bottom Signature Block: 2 Columns with 2x Larger Signature Image */}
@@ -387,21 +418,17 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
         {/* Right Signature Column: Authorized Seller with 2x Enlarged Uploaded Signature */}
         <div className="flex flex-col justify-end px-4">
           <div className="border-b border-dashed border-slate-400 h-24 mb-2 flex flex-col items-center justify-end pb-1">
-            {docSet.sellerSignatureDataUrl ? (
+            {docSet.sellerSignatureDataUrl && docSet.showSellerSignature !== false ? (
               <img
                 src={docSet.sellerSignatureDataUrl}
                 alt="ลายเซ็นผู้มีอำนาจลงนาม"
                 referrerPolicy="no-referrer"
                 className="h-24 max-h-24 max-w-[340px] object-contain"
               />
-            ) : (
-              <span className="text-slate-700 font-semibold">
-                {docSet.sellerSignerName || ''}
-              </span>
-            )}
+            ) : null}
           </div>
           <div className="font-semibold text-slate-800">{pageMeta.footerRightTitle}</div>
-          {docSet.sellerSignatureDataUrl && docSet.sellerSignerName && (
+          {docSet.sellerSignerName && (
             <div className="text-[11px] text-slate-700 font-medium mt-0.5">
               ({docSet.sellerSignerName})
             </div>

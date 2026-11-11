@@ -70,7 +70,8 @@ service cloud.firestore {
         'customerContact', 'customerPhone', 'customerEmail', 'sellerName',
         'sellerTaxId', 'sellerBranch', 'sellerAddress', 'sellerPhone',
         'sellerEmail', 'sellerBankInfo', 'sellerSignerName',
-        'sellerLogoDataUrl', 'sellerSignatureDataUrl',
+        'sellerLogoDataUrl', 'sellerSignatureDataUrl', 'showSellerSignature',
+        'idCardImageDataUrl', 'bankBookImageDataUrl',
         'discountAmount', 'vatMode', 'vatRate', 'whtEnabled', 'whtRate', 'whtType',
         'paymentMethod', 'paymentDate', 'notes', 'createdAt', 'updatedAt'
       ]) &&
@@ -102,6 +103,9 @@ service cloud.firestore {
       data.sellerSignerName is string && data.sellerSignerName.size() <= 150 &&
       (!('sellerLogoDataUrl' in data) || (data.sellerLogoDataUrl is string && data.sellerLogoDataUrl.size() <= 350000)) &&
       (!('sellerSignatureDataUrl' in data) || (data.sellerSignatureDataUrl is string && data.sellerSignatureDataUrl.size() <= 350000)) &&
+      (!('showSellerSignature' in data) || (data.showSellerSignature is bool)) &&
+      (!('idCardImageDataUrl' in data) || (data.idCardImageDataUrl is string && data.idCardImageDataUrl.size() <= 250000)) &&
+      (!('bankBookImageDataUrl' in data) || (data.bankBookImageDataUrl is string && data.bankBookImageDataUrl.size() <= 250000)) &&
       data.discountAmount is number && data.discountAmount >= 0 && data.discountAmount <= 1000000000 &&
       data.vatMode is string && data.vatMode.size() <= 20 &&
       (data.vatMode == 'exclude' || data.vatMode == 'include' || data.vatMode == 'none') &&
@@ -182,7 +186,8 @@ service cloud.firestore {
           'customerContact', 'customerPhone', 'customerEmail', 'sellerName',
           'sellerTaxId', 'sellerBranch', 'sellerAddress', 'sellerPhone',
           'sellerEmail', 'sellerBankInfo', 'sellerSignerName',
-          'sellerLogoDataUrl', 'sellerSignatureDataUrl',
+          'sellerLogoDataUrl', 'sellerSignatureDataUrl', 'showSellerSignature',
+          'idCardImageDataUrl', 'bankBookImageDataUrl',
           'discountAmount', 'vatMode', 'vatRate', 'whtEnabled', 'whtRate', 'whtType',
           'paymentMethod', 'paymentDate', 'notes', 'updatedAt'
         ]) &&

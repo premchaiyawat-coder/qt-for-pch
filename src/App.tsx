@@ -24,8 +24,12 @@ import {
   RefreshCw,
   Mail,
   ShieldCheck,
+  Upload,
+  Image as ImageIcon,
+  Eye,
 } from 'lucide-react';
 import { auth, googleProvider } from './firebase';
+import { fileToResizedJpegDataUrl } from './utils/imageHelper';
 import {
   calculateFinancialSummary,
   CustomerRecord,
@@ -75,7 +79,9 @@ function isUntouchedSampleDoc(doc: DocumentSetRecord): boolean {
     doc.customerName === DEFAULT_DOCUMENT_SET.customerName &&
     doc.quotationNo === DEFAULT_DOCUMENT_SET.quotationNo &&
     !doc.sellerLogoDataUrl &&
-    !doc.sellerSignatureDataUrl
+    !doc.sellerSignatureDataUrl &&
+    !doc.idCardImageDataUrl &&
+    !doc.bankBookImageDataUrl
   );
 }
 
@@ -85,12 +91,14 @@ export default function App() {
   const [activeDocPage, setActiveDocPage] = useState<DocumentPageKey>('quotation');
   const [previewLayout, setPreviewLayout] = useState<PreviewLayoutMode>('single');
 
-  // Checkboxes for selective PDF download (default all 4 checked)
+  // Checkboxes for selective PDF download (default all pages checked: Quotation -> Supporting Docs)
   const [selectedPdfPages, setSelectedPdfPages] = useState<DocumentPageKey[]>([
     'quotation',
     'billingNote',
     'invoice',
     'receipt',
+    'attachmentIdCard',
+    'attachmentBankBook',
   ]);
 
   // Auth & Cloud state
@@ -102,10 +110,12 @@ export default function App() {
   const [cloudSyncState, setCloudSyncState] = useState<'idle' | 'syncing' | 'synced'>('idle');
   const [localEditVersion, setLocalEditVersion] = useState(0);
 
-  // Active Document Set (synced across all 4 pages)
+  // Active Document Set (synced across all 5 pages)
   const [docSet, setDocSet] = useState<DocumentSetRecord>(() => {
     const savedLogo = localStorage.getItem('syncdoc_seller_logo_v1') || '';
     const savedSignature = localStorage.getItem('syncdoc_seller_signature_v1') || '';
+    const savedIdCard = localStorage.getItem('syncdoc_id_card_v1') || '';
+    const savedBankBook = localStorage.getItem('syncdoc_bank_book_v1') || '';
 
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_DOC_KEY);
@@ -119,6 +129,8 @@ export default function App() {
             vatRate: 0,
             sellerLogoDataUrl: parsed.sellerLogoDataUrl || savedLogo,
             sellerSignatureDataUrl: parsed.sellerSignatureDataUrl || savedSignature,
+            idCardImageDataUrl: parsed.idCardImageDataUrl || savedIdCard,
+            bankBookImageDataUrl: parsed.bankBookImageDataUrl || savedBankBook,
           };
         }
       }
@@ -129,6 +141,8 @@ export default function App() {
       ...DEFAULT_DOCUMENT_SET,
       sellerLogoDataUrl: savedLogo,
       sellerSignatureDataUrl: savedSignature,
+      idCardImageDataUrl: savedIdCard,
+      bankBookImageDataUrl: savedBankBook,
     };
   });
 
@@ -196,7 +210,12 @@ export default function App() {
     billingNote: null,
     invoice: null,
     receipt: null,
+    attachmentIdCard: null,
+    attachmentBankBook: null,
   });
+
+  const idCardFileInputRef = useRef<HTMLInputElement | null>(null);
+  const bankBookFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setToastMessage({ text, type });
@@ -226,6 +245,12 @@ export default function App() {
       }
       if (docSet.sellerSignatureDataUrl) {
         localStorage.setItem('syncdoc_seller_signature_v1', docSet.sellerSignatureDataUrl);
+      }
+      if (docSet.idCardImageDataUrl) {
+        localStorage.setItem('syncdoc_id_card_v1', docSet.idCardImageDataUrl);
+      }
+      if (docSet.bankBookImageDataUrl) {
+        localStorage.setItem('syncdoc_bank_book_v1', docSet.bankBookImageDataUrl);
       }
     } catch {
       // Ignore storage quota errors
@@ -257,7 +282,7 @@ export default function App() {
 
   const isCloudReady = Boolean(authReady && currentUser);
 
-  // Helper to apply a cloud document set + its items into the active 4-page editor
+  // Helper to apply a cloud document set + its items into the active editor
   const applyCloudDocSetToWorkspace = async (
     uid: string,
     cloudDocMeta: Omit<DocumentSetRecord, 'items'>
@@ -271,6 +296,8 @@ export default function App() {
 
     const savedLogo = localStorage.getItem('syncdoc_seller_logo_v1') || '';
     const savedSignature = localStorage.getItem('syncdoc_seller_signature_v1') || '';
+    const savedIdCard = localStorage.getItem('syncdoc_id_card_v1') || '';
+    const savedBankBook = localStorage.getItem('syncdoc_bank_book_v1') || '';
 
     const nextLogo =
       cloudDocMeta.sellerLogoDataUrl || docSetRef.current.sellerLogoDataUrl || savedLogo;
@@ -278,6 +305,12 @@ export default function App() {
       cloudDocMeta.sellerSignatureDataUrl ||
       docSetRef.current.sellerSignatureDataUrl ||
       savedSignature;
+    const nextIdCard =
+      cloudDocMeta.idCardImageDataUrl || docSetRef.current.idCardImageDataUrl || savedIdCard;
+    const nextBankBook =
+      cloudDocMeta.bankBookImageDataUrl ||
+      docSetRef.current.bankBookImageDataUrl ||
+      savedBankBook;
 
     localDirtyRef.current = false;
     setDocSet({
@@ -287,6 +320,8 @@ export default function App() {
       vatRate: 0,
       sellerLogoDataUrl: nextLogo,
       sellerSignatureDataUrl: nextSignature,
+      idCardImageDataUrl: nextIdCard,
+      bankBookImageDataUrl: nextBankBook,
       items: loadedItems.length > 0 ? loadedItems : docSetRef.current.items,
     });
     setCloudSyncState('synced');
@@ -649,6 +684,8 @@ export default function App() {
 
     const savedLogo = localStorage.getItem('syncdoc_seller_logo_v1') || '';
     const savedSignature = localStorage.getItem('syncdoc_seller_signature_v1') || '';
+    const savedIdCard = localStorage.getItem('syncdoc_id_card_v1') || '';
+    const savedBankBook = localStorage.getItem('syncdoc_bank_book_v1') || '';
 
     setDocSet({
       ...foundMeta,
@@ -658,6 +695,10 @@ export default function App() {
       sellerLogoDataUrl: foundMeta.sellerLogoDataUrl || docSet.sellerLogoDataUrl || savedLogo,
       sellerSignatureDataUrl:
         foundMeta.sellerSignatureDataUrl || docSet.sellerSignatureDataUrl || savedSignature,
+      idCardImageDataUrl:
+        foundMeta.idCardImageDataUrl || docSet.idCardImageDataUrl || savedIdCard,
+      bankBookImageDataUrl:
+        foundMeta.bankBookImageDataUrl || docSet.bankBookImageDataUrl || savedBankBook,
       items: loadedItems.length > 0 ? loadedItems : DEFAULT_DOCUMENT_SET.items,
     });
     markLocalWorkspaceEdited();
@@ -698,6 +739,11 @@ export default function App() {
         docSet.sellerSignatureDataUrl ||
         localStorage.getItem('syncdoc_seller_signature_v1') ||
         '',
+      showSellerSignature: docSet.showSellerSignature !== false,
+      idCardImageDataUrl:
+        docSet.idCardImageDataUrl || localStorage.getItem('syncdoc_id_card_v1') || '',
+      bankBookImageDataUrl:
+        docSet.bankBookImageDataUrl || localStorage.getItem('syncdoc_bank_book_v1') || '',
     };
 
     try {
@@ -711,6 +757,10 @@ export default function App() {
             parsedSeller.sellerLogoDataUrl || defaultSeller.sellerLogoDataUrl,
           sellerSignatureDataUrl:
             parsedSeller.sellerSignatureDataUrl || defaultSeller.sellerSignatureDataUrl,
+          idCardImageDataUrl:
+            parsedSeller.idCardImageDataUrl || defaultSeller.idCardImageDataUrl,
+          bankBookImageDataUrl:
+            parsedSeller.bankBookImageDataUrl || defaultSeller.bankBookImageDataUrl,
         };
       }
     } catch {
@@ -1047,7 +1097,9 @@ export default function App() {
               onClick={toggleSelectAllPdfPages}
               className="px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 underline underline-offset-2 whitespace-nowrap shrink-0 cursor-pointer"
             >
-              {selectedPdfPages.length === 4 ? 'เลือกเฉพาะหน้าแรก' : 'เลือกทั้ง 4 หน้า'}
+              {selectedPdfPages.length === DOCUMENT_PAGES.length
+                ? 'เลือกเฉพาะหน้าแรก'
+                : `เลือกครบทุกหน้า (${DOCUMENT_PAGES.length} หน้า)`}
             </button>
           </div>
 
@@ -1778,77 +1830,424 @@ export default function App() {
                       className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md"
                     />
                   </div>
+
+                  {/* Signature Visibility Checkbox */}
+                  <div className="sm:col-span-12 pt-2">
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-wrap items-center justify-between gap-3">
+                      <label className="inline-flex items-center gap-2.5 text-xs font-bold text-slate-900 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={docSet.showSellerSignature !== false}
+                          onChange={(e) =>
+                            updateDocFields({ showSellerSignature: e.target.checked })
+                          }
+                          className="w-4 h-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
+                        />
+                        <span>แปะลายเซ็นไว้ในช่องลงนาม (แสดงทั้ง 4 หน้า)</span>
+                      </label>
+
+                      <button
+                        type="button"
+                        onClick={() => setActiveNavTab('seller')}
+                        className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-2 cursor-pointer"
+                      >
+                        {docSet.sellerSignatureDataUrl
+                          ? 'เปลี่ยนรูปลายเซ็น'
+                          : 'อัปโหลดรูปลายเซ็น'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </section>
-            </div>
 
-            {/* RIGHT COLUMN (7 cols): Synchronized 4-Page Live A4 Preview */}
-            <div className="lg:col-span-7 space-y-4">
-              {/* Preview Switcher Toolbar */}
-              <div className="bg-white border border-slate-200 rounded-lg p-3 flex flex-wrap items-center justify-between gap-3">
-                {/* 4 Page Tabs */}
-                <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
-                  {DOCUMENT_PAGES.map((page) => {
-                    const isActive =
-                      previewLayout === 'single' && activeDocPage === page.key;
-                    return (
+              {/* Card 4: 04. อัปโหลดเอกสารเพิ่มเติม (5. เอกสารเพิ่มเติม -> 1. สำเนาบัตรประชาชน / 2. สำเนาสมุดธนาคาร) */}
+              <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
+                  <div>
+                    <h2 className="text-sm font-bold text-slate-900">
+                      04. อัปโหลดเอกสารเพิ่มเติม (5. เอกสารเพิ่มเติม)
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      แยกเป็นหน้าย่อย 1. สำเนาบัตรประชาชน และ 2. สำเนาสมุดธนาคาร (หน้ากระดาษเปล่าแสดงเฉพาะรูปที่อัปโหลด)
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewLayout('single');
+                        setActiveDocPage('attachmentIdCard');
+                      }}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        activeDocPage === 'attachmentIdCard'
+                          ? 'bg-purple-700 text-white'
+                          : 'text-purple-700 bg-purple-50 hover:bg-purple-100'
+                      }`}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>1. สำเนาบัตรประชาชน</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewLayout('single');
+                        setActiveDocPage('attachmentBankBook');
+                      }}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        activeDocPage === 'attachmentBankBook'
+                          ? 'bg-purple-700 text-white'
+                          : 'text-purple-700 bg-purple-50 hover:bg-purple-100'
+                      }`}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>2. สำเนาสมุดธนาคาร</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  {/* หน้าย่อย 1. สำเนาบัตรประชาชน */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
                       <button
-                        key={page.key}
                         type="button"
                         onClick={() => {
                           setPreviewLayout('single');
-                          setActiveDocPage(page.key);
+                          setActiveDocPage('attachmentIdCard');
                         }}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                          isActive
-                            ? 'bg-white text-slate-900 shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
+                        className="font-bold text-slate-900 hover:text-purple-700 text-left cursor-pointer"
                       >
-                        {page.shortLabel}
+                        หน้าย่อย 1. สำเนาบัตรประชาชน
                       </button>
-                    );
-                  })}
-                </div>
+                      {docSet.idCardImageDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateDocFields({ idCardImageDataUrl: '' });
+                            localStorage.removeItem('syncdoc_id_card_v1');
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>ลบ</span>
+                        </button>
+                      )}
+                    </div>
 
-                {/* View Mode Toggle: Single Page vs All 4 Pages Together */}
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setPreviewLayout((prev) => (prev === 'single' ? 'all4' : 'single'))
-                    }
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                      previewLayout === 'all4'
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    {previewLayout === 'all4' ? (
-                      <>
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>ดูทีละหน้า</span>
-                      </>
-                    ) : (
-                      <>
-                        <Layers className="w-3.5 h-3.5" />
-                        <span>ดูเรียงทั้ง 4 หน้าพร้อมกัน</span>
-                      </>
-                    )}
-                  </button>
+                    <div
+                      onClick={() => {
+                        setPreviewLayout('single');
+                        setActiveDocPage('attachmentIdCard');
+                      }}
+                      className="h-28 bg-white border border-dashed border-slate-300 rounded-md flex items-center justify-center p-2 cursor-pointer hover:border-purple-400 transition-colors"
+                    >
+                      {docSet.idCardImageDataUrl ? (
+                        <img
+                          src={docSet.idCardImageDataUrl}
+                          alt="สำเนาบัตรประชาชน"
+                          referrerPolicy="no-referrer"
+                          className="max-h-24 max-w-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-center text-[11px] text-slate-400 flex flex-col items-center gap-1">
+                          <ImageIcon className="w-5 h-5 text-slate-300" />
+                          <span>ยังไม่ได้อัปโหลดสำเนาบัตรประชาชน</span>
+                        </div>
+                      )}
+                    </div>
 
-                  {previewLayout === 'single' && (
+                    <input
+                      ref={idCardFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const dataUrl = await fileToResizedJpegDataUrl(file, 1100, 1450);
+                          updateDocFields({ idCardImageDataUrl: dataUrl });
+                          localStorage.setItem('syncdoc_id_card_v1', dataUrl);
+                          setPreviewLayout('single');
+                          setActiveDocPage('attachmentIdCard');
+                          showToast('อัปโหลด 1. สำเนาบัตรประชาชน เรียบร้อยแล้ว');
+                        } catch (err) {
+                          showToast(
+                            err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ',
+                            'error'
+                          );
+                        }
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
                     <button
                       type="button"
-                      disabled={isExportingPdf}
-                      onClick={() => handleDownloadSelectedPdf([activePageMeta.key])}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                      onClick={() => idCardFileInputRef.current?.click()}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
                     >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>โหลดเฉพาะหน้านี้ (PDF)</span>
+                      <Upload className="w-3.5 h-3.5 text-purple-700" />
+                      <span>
+                        {docSet.idCardImageDataUrl
+                          ? 'เปลี่ยนรูปสำเนาบัตรประชาชน'
+                          : 'อัปโหลดสำเนาบัตรประชาชน'}
+                      </span>
                     </button>
-                  )}
+                  </div>
+
+                  {/* หน้าย่อย 2. สำเนาสมุดธนาคาร */}
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPreviewLayout('single');
+                          setActiveDocPage('attachmentBankBook');
+                        }}
+                        className="font-bold text-slate-900 hover:text-purple-700 text-left cursor-pointer"
+                      >
+                        หน้าย่อย 2. สำเนาสมุดธนาคาร
+                      </button>
+                      {docSet.bankBookImageDataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateDocFields({ bankBookImageDataUrl: '' });
+                            localStorage.removeItem('syncdoc_bank_book_v1');
+                          }}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 hover:text-rose-800 cursor-pointer"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>ลบ</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div
+                      onClick={() => {
+                        setPreviewLayout('single');
+                        setActiveDocPage('attachmentBankBook');
+                      }}
+                      className="h-28 bg-white border border-dashed border-slate-300 rounded-md flex items-center justify-center p-2 cursor-pointer hover:border-purple-400 transition-colors"
+                    >
+                      {docSet.bankBookImageDataUrl ? (
+                        <img
+                          src={docSet.bankBookImageDataUrl}
+                          alt="สำเนาสมุดธนาคาร"
+                          referrerPolicy="no-referrer"
+                          className="max-h-24 max-w-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-center text-[11px] text-slate-400 flex flex-col items-center gap-1">
+                          <ImageIcon className="w-5 h-5 text-slate-300" />
+                          <span>ยังไม่ได้อัปโหลดสำเนาสมุดธนาคาร</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <input
+                      ref={bankBookFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          const dataUrl = await fileToResizedJpegDataUrl(file, 1100, 1450);
+                          updateDocFields({ bankBookImageDataUrl: dataUrl });
+                          localStorage.setItem('syncdoc_bank_book_v1', dataUrl);
+                          setPreviewLayout('single');
+                          setActiveDocPage('attachmentBankBook');
+                          showToast('อัปโหลด 2. สำเนาสมุดธนาคาร เรียบร้อยแล้ว');
+                        } catch (err) {
+                          showToast(
+                            err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ',
+                            'error'
+                          );
+                        }
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => bankBookFileInputRef.current?.click()}
+                      className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-purple-700" />
+                      <span>
+                        {docSet.bankBookImageDataUrl
+                          ? 'เปลี่ยนรูปสำเนาสมุดธนาคาร'
+                          : 'อัปโหลดสำเนาสมุดธนาคาร'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
+
+                {/* One-click Download All Pages Button */}
+                <button
+                  type="button"
+                  disabled={isExportingPdf}
+                  onClick={() => {
+                    const allPageKeys = DOCUMENT_PAGES.map((p) => p.key);
+                    setSelectedPdfPages(allPageKeys);
+                    handleDownloadSelectedPdf(allPageKeys);
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg transition-colors disabled:opacity-60 cursor-pointer"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>
+                    ดาวน์โหลดครบทุกหน้าพร้อมกัน (ใบเสนอราคา ถึง เอกสารเพิ่มเติม)
+                  </span>
+                </button>
+              </section>
+            </div>
+
+            {/* RIGHT COLUMN (7 cols): Synchronized Live A4 Preview */}
+            <div className="lg:col-span-7 space-y-4">
+              {/* Preview Switcher Toolbar */}
+              <div className="bg-white border border-slate-200 rounded-lg p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {/* Main 5 Tabs: 1-4 + 5. เอกสารเพิ่มเติม */}
+                  <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 rounded-lg">
+                    {DOCUMENT_PAGES.filter(
+                      (p) => p.key !== 'attachmentIdCard' && p.key !== 'attachmentBankBook'
+                    ).map((page) => {
+                      const isActive =
+                        previewLayout === 'single' && activeDocPage === page.key;
+                      return (
+                        <button
+                          key={page.key}
+                          type="button"
+                          onClick={() => {
+                            setPreviewLayout('single');
+                            setActiveDocPage(page.key);
+                          }}
+                          className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                            isActive
+                              ? 'bg-white text-slate-900 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {page.shortLabel}
+                        </button>
+                      );
+                    })}
+
+                    {/* Tab 5: 5. เอกสารเพิ่มเติม (with sub-pages 1. สำเนาบัตรประชาชน & 2. สำเนาสมุดธนาคาร) */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPreviewLayout('single');
+                        if (
+                          activeDocPage !== 'attachmentIdCard' &&
+                          activeDocPage !== 'attachmentBankBook'
+                        ) {
+                          setActiveDocPage('attachmentIdCard');
+                        }
+                      }}
+                      className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        previewLayout === 'single' &&
+                        (activeDocPage === 'attachmentIdCard' ||
+                          activeDocPage === 'attachmentBankBook')
+                          ? 'bg-white text-purple-800 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      5. เอกสารเพิ่มเติม
+                    </button>
+                  </div>
+
+                  {/* View Mode Toggle: Single Page vs All Pages Together */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPreviewLayout((prev) => (prev === 'single' ? 'all4' : 'single'))
+                      }
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                        previewLayout === 'all4'
+                          ? 'bg-slate-900 text-white border-slate-900'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {previewLayout === 'all4' ? (
+                        <>
+                          <FileText className="w-3.5 h-3.5" />
+                          <span>ดูทีละหน้า</span>
+                        </>
+                      ) : (
+                        <>
+                          <Layers className="w-3.5 h-3.5" />
+                          <span>ดูเรียงครบทุกหน้าพร้อมกัน</span>
+                        </>
+                      )}
+                    </button>
+
+                    {previewLayout === 'single' && (
+                      <button
+                        type="button"
+                        disabled={isExportingPdf}
+                        onClick={() => handleDownloadSelectedPdf([activePageMeta.key])}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>โหลดเฉพาะหน้านี้ (PDF)</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Sub-page Selector Bar when "5. เอกสารเพิ่มเติม" is selected */}
+                {previewLayout === 'single' &&
+                  (activeDocPage === 'attachmentIdCard' ||
+                    activeDocPage === 'attachmentBankBook') && (
+                    <div className="pt-2.5 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-slate-600">
+                          เลือกหน้าย่อยของ 5. เอกสารเพิ่มเติม:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setActiveDocPage('attachmentIdCard')}
+                          className={`px-3 py-1.5 rounded-md font-semibold border transition-colors cursor-pointer ${
+                            activeDocPage === 'attachmentIdCard'
+                              ? 'bg-purple-700 text-white border-purple-700'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          1. สำเนาบัตรประชาชน
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveDocPage('attachmentBankBook')}
+                          className={`px-3 py-1.5 rounded-md font-semibold border transition-colors cursor-pointer ${
+                            activeDocPage === 'attachmentBankBook'
+                              ? 'bg-purple-700 text-white border-purple-700'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          2. สำเนาสมุดธนาคาร
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          activeDocPage === 'attachmentIdCard'
+                            ? idCardFileInputRef.current?.click()
+                            : bankBookFileInputRef.current?.click()
+                        }
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-md border border-purple-200 transition-colors cursor-pointer"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>
+                          {activeDocPage === 'attachmentIdCard'
+                            ? 'อัปโหลดรูป 1. สำเนาบัตรประชาชน'
+                            : 'อัปโหลดรูป 2. สำเนาสมุดธนาคาร'}
+                        </span>
+                      </button>
+                    </div>
+                  )}
               </div>
 
               {/* A4 Sheet Viewport */}

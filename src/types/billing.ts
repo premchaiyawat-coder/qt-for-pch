@@ -1,10 +1,17 @@
-export type DocumentPageKey = 'quotation' | 'billingNote' | 'invoice' | 'receipt';
+export type DocumentPageKey =
+  | 'quotation'
+  | 'billingNote'
+  | 'invoice'
+  | 'receipt'
+  | 'attachmentIdCard'
+  | 'attachmentBankBook';
 
 export type VatMode = 'include' | 'none';
 
 export interface DocumentPageMeta {
   key: DocumentPageKey;
   index: number;
+  subIndex?: string;
   thaiTitle: string;
   englishTitle: string;
   shortLabel: string;
@@ -74,6 +81,36 @@ export const DOCUMENT_PAGES: DocumentPageMeta[] = [
     footerLeftTitle: 'ผู้จ่ายเงิน (Payer)',
     footerRightTitle: 'ผู้รับเงิน / ผู้มีอำนาจลงนาม (Authorized Signature)',
   },
+  {
+    key: 'attachmentIdCard',
+    index: 5,
+    subIndex: '5.1',
+    thaiTitle: 'สำเนาบัตรประชาชน',
+    englishTitle: 'ID CARD COPY',
+    shortLabel: '5.1 สำเนาบัตรประชาชน',
+    badgeColor: 'text-purple-700',
+    accentHex: '#6d28d9',
+    docNumberField: 'quotationNo',
+    dateLabel: 'วันที่เอกสาร / Date',
+    dueDateLabel: 'ครบกำหนด / Due Date',
+    footerLeftTitle: '',
+    footerRightTitle: '',
+  },
+  {
+    key: 'attachmentBankBook',
+    index: 6,
+    subIndex: '5.2',
+    thaiTitle: 'สำเนาสมุดธนาคาร',
+    englishTitle: 'BANK BOOK COPY',
+    shortLabel: '5.2 สำเนาสมุดธนาคาร',
+    badgeColor: 'text-purple-700',
+    accentHex: '#6d28d9',
+    docNumberField: 'quotationNo',
+    dateLabel: 'วันที่เอกสาร / Date',
+    dueDateLabel: 'ครบกำหนด / Due Date',
+    footerLeftTitle: '',
+    footerRightTitle: '',
+  },
 ];
 
 // Blueprint validation constants synced verbatim with firebase-blueprint.json & firestore.rules
@@ -108,6 +145,8 @@ export const BLUEPRINT_CONSTRAINTS = {
     signerMax: 150,
     logoDataUrlMax: 350000,
     signatureDataUrlMax: 350000,
+    idCardDataUrlMax: 250000,
+    bankBookDataUrlMax: 250000,
     whtTypeMax: 150,
     paymentMethodMax: 100,
     notesMax: 1000,
@@ -174,6 +213,9 @@ export interface DocumentSetRecord {
   sellerSignerName: string;
   sellerLogoDataUrl?: string;
   sellerSignatureDataUrl?: string;
+  showSellerSignature?: boolean;
+  idCardImageDataUrl?: string;
+  bankBookImageDataUrl?: string;
   discountAmount: number;
   vatMode: VatMode;
   vatRate: number;
@@ -465,6 +507,9 @@ export const DEFAULT_DOCUMENT_SET: DocumentSetRecord = {
   sellerSignerName: 'นายปรมัตถ์ ชัยวัฒน์ (กรรมการผู้จัดการ)',
   sellerLogoDataUrl: '',
   sellerSignatureDataUrl: '',
+  showSellerSignature: true,
+  idCardImageDataUrl: '',
+  bankBookImageDataUrl: '',
   discountAmount: 0,
   vatMode: 'none',
   vatRate: 0,

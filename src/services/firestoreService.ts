@@ -180,6 +180,10 @@ export function subscribeUserDocumentSets(
           sellerSignerName: String(d.sellerSignerName || ''),
           sellerLogoDataUrl: String(d.sellerLogoDataUrl || ''),
           sellerSignatureDataUrl: String(d.sellerSignatureDataUrl || ''),
+          showSellerSignature:
+            d.showSellerSignature !== undefined ? Boolean(d.showSellerSignature) : true,
+          idCardImageDataUrl: String(d.idCardImageDataUrl || ''),
+          bankBookImageDataUrl: String(d.bankBookImageDataUrl || ''),
           discountAmount: 0,
           vatMode: d.vatMode === 'none' ? 'none' : 'include',
           vatRate: Number(d.vatRate ?? 0),
@@ -279,6 +283,13 @@ export async function saveDocumentSetToFirestore(
     sellerSignatureDataUrl: clampString(
       docSet.sellerSignatureDataUrl,
       D.signatureDataUrlMax,
+      ''
+    ),
+    showSellerSignature: docSet.showSellerSignature !== false,
+    idCardImageDataUrl: clampString(docSet.idCardImageDataUrl, D.idCardDataUrlMax, ''),
+    bankBookImageDataUrl: clampString(
+      docSet.bankBookImageDataUrl,
+      D.bankBookDataUrlMax,
       ''
     ),
     discountAmount: 0,

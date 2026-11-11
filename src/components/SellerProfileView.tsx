@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Check, Upload, Trash2, Image as ImageIcon } from 'lucide-react';
 import { BLUEPRINT_CONSTRAINTS, DocumentSetRecord } from '../types/billing';
-import { fileToResizedPngDataUrl } from '../utils/imageHelper';
+import { fileToResizedJpegDataUrl, fileToResizedPngDataUrl } from '../utils/imageHelper';
 
 interface SellerProfileViewProps {
   docSet: DocumentSetRecord;
@@ -17,6 +17,8 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
   const [savedNotice, setSavedNotice] = useState(false);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const sigInputRef = useRef<HTMLInputElement | null>(null);
+  const idCardInputRef = useRef<HTMLInputElement | null>(null);
+  const bankBookInputRef = useRef<HTMLInputElement | null>(null);
   const D = BLUEPRINT_CONSTRAINTS.DOC_SET;
 
   const handleUploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,6 +47,32 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
     e.target.value = '';
   };
 
+  const handleUploadIdCard = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await fileToResizedJpegDataUrl(file, 960, 580);
+    onUpdateSellerFields({ idCardImageDataUrl: dataUrl });
+    try {
+      localStorage.setItem('syncdoc_id_card_v1', dataUrl);
+    } catch {
+      // Ignore
+    }
+    e.target.value = '';
+  };
+
+  const handleUploadBankBook = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const dataUrl = await fileToResizedJpegDataUrl(file, 960, 580);
+    onUpdateSellerFields({ bankBookImageDataUrl: dataUrl });
+    try {
+      localStorage.setItem('syncdoc_bank_book_v1', dataUrl);
+    } catch {
+      // Ignore
+    }
+    e.target.value = '';
+  };
+
   const handleSaveDefaultSeller = (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -61,6 +89,9 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
           sellerSignerName: docSet.sellerSignerName,
           sellerLogoDataUrl: docSet.sellerLogoDataUrl || '',
           sellerSignatureDataUrl: docSet.sellerSignatureDataUrl || '',
+          showSellerSignature: docSet.showSellerSignature !== false,
+          idCardImageDataUrl: docSet.idCardImageDataUrl || '',
+          bankBookImageDataUrl: docSet.bankBookImageDataUrl || '',
         })
       );
       if (docSet.sellerLogoDataUrl !== undefined) {
@@ -68,6 +99,12 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
       }
       if (docSet.sellerSignatureDataUrl !== undefined) {
         localStorage.setItem('syncdoc_seller_signature_v1', docSet.sellerSignatureDataUrl || '');
+      }
+      if (docSet.idCardImageDataUrl !== undefined) {
+        localStorage.setItem('syncdoc_id_card_v1', docSet.idCardImageDataUrl || '');
+      }
+      if (docSet.bankBookImageDataUrl !== undefined) {
+        localStorage.setItem('syncdoc_bank_book_v1', docSet.bankBookImageDataUrl || '');
       }
       setSavedNotice(true);
       setTimeout(() => setSavedNotice(false), 3000);
@@ -81,10 +118,10 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-200">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-            ข้อมูลผู้ขาย โลโก้ร้าน และลายเซ็น (Seller Profile & Assets)
+            ข้อมูลผู้ขาย โลโก้ร้าน ลายเซ็น และเอกสารแนบ (Seller Profile & Assets)
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            อัปโหลดโลโก้ร้าน ลายเซ็นผู้มีอำนาจลงนาม เลขผู้เสียภาษี และบัญชีธนาคาร เพื่อซิงค์ไปแสดงทุกหน้าอัตโนมัติ
+            อัปโหลดโลโก้ร้าน ลายเซ็น สำเนาบัตรประชาชน และหน้าสมุดบัญชีธนาคาร เพื่อซิงค์และดาวน์โหลดพร้อมกันทุกหน้า
           </p>
         </div>
 
@@ -93,7 +130,7 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
           onClick={onReturnToEditor}
           className="px-4 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
         >
-          กลับไปหน้าพรีวิวเอกสาร 4 หน้า
+          กลับไปหน้าพรีวิวเอกสารทั้งหมด
         </button>
       </div>
 
@@ -111,7 +148,7 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
                   ภาพโลโก้ร้าน / บริษัทผู้ขาย (Seller Logo)
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  แสดงมุมซ้ายบนของเอกสารทั้ง 4 หน้า (แนะนำพื้นหลังใส PNG หรือ JPG)
+                  แสดงมุมซ้ายบนของเอกสารทุกหน้า (แนะนำพื้นหลังใส PNG หรือ JPG)
                 </p>
               </div>
               {docSet.sellerLogoDataUrl && (
@@ -170,7 +207,7 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
                   ภาพลายเซ็นผู้อนุมัติ / ผู้มีอำนาจลงนาม (Signature)
                 </h2>
                 <p className="text-[11px] text-slate-500">
-                  แสดงในช่องลงนามฝั่งขวาของเอกสารทั้ง 4 หน้าอัตโนมัติ
+                  แสดงในช่องลงนามฝั่งขวาของเอกสารทุกหน้าอัตโนมัติ
                 </p>
               </div>
               {docSet.sellerSignatureDataUrl && (
@@ -218,6 +255,136 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
             >
               <Upload className="w-3.5 h-3.5 text-blue-700" />
               <span>เลือกไฟล์รูปลายเซ็น...</span>
+            </button>
+
+            <label className="flex items-center gap-2 pt-2 border-t border-slate-200 text-xs font-semibold text-slate-800 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={docSet.showSellerSignature !== false}
+                onChange={(e) =>
+                  onUpdateSellerFields({ showSellerSignature: e.target.checked })
+                }
+                className="w-4 h-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
+              />
+              <span>แปะภาพลายเซ็นไว้ในช่องลงนาม (แสดงทุกหน้า)</span>
+            </label>
+          </div>
+
+          {/* ID Card Copy Upload (Page 5) */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xs font-bold text-slate-900">
+                  1. สำเนาบัตรประชาชน (แสดงในหน้าที่ 5 เอกสารเพิ่มเติม)
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  อัปโหลดภาพสำเนาบัตรประชาชนเพื่อรวมในไฟล์ PDF ชุดเดียวกัน
+                </p>
+              </div>
+              {docSet.idCardImageDataUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateSellerFields({ idCardImageDataUrl: '' });
+                    localStorage.removeItem('syncdoc_id_card_v1');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-800 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>ลบรูป</span>
+                </button>
+              )}
+            </div>
+
+            <div className="h-32 bg-white border border-dashed border-slate-300 rounded-md flex items-center justify-center p-2">
+              {docSet.idCardImageDataUrl ? (
+                <img
+                  src={docSet.idCardImageDataUrl}
+                  alt="สำเนาบัตรประชาชน"
+                  referrerPolicy="no-referrer"
+                  className="max-h-28 max-w-full object-contain"
+                />
+              ) : (
+                <div className="text-center text-xs text-slate-400 flex flex-col items-center gap-1">
+                  <ImageIcon className="w-5 h-5 text-slate-300" />
+                  <span>ยังไม่ได้อัปโหลดสำเนาบัตรประชาชน</span>
+                </div>
+              )}
+            </div>
+
+            <input
+              ref={idCardInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleUploadIdCard}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => idCardInputRef.current?.click()}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5 text-purple-700" />
+              <span>เลือกไฟล์รูปสำเนาบัตรประชาชน...</span>
+            </button>
+          </div>
+
+          {/* Bank Book Copy Upload (Page 5) */}
+          <div className="p-4 bg-slate-50 border border-slate-200 rounded-lg space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xs font-bold text-slate-900">
+                  2. สำเนาหน้าสมุดธนาคาร (แสดงในหน้าที่ 5 เอกสารเพิ่มเติม)
+                </h2>
+                <p className="text-[11px] text-slate-500">
+                  อัปโหลดภาพหน้าสมุดบัญชีธนาคารเพื่อแนบเบิกจ่ายพร้อมใบวางบิล/ใบแจ้งหนี้
+                </p>
+              </div>
+              {docSet.bankBookImageDataUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateSellerFields({ bankBookImageDataUrl: '' });
+                    localStorage.removeItem('syncdoc_bank_book_v1');
+                  }}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-800 cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>ลบรูป</span>
+                </button>
+              )}
+            </div>
+
+            <div className="h-32 bg-white border border-dashed border-slate-300 rounded-md flex items-center justify-center p-2">
+              {docSet.bankBookImageDataUrl ? (
+                <img
+                  src={docSet.bankBookImageDataUrl}
+                  alt="สำเนาหน้าสมุดบัญชีธนาคาร"
+                  referrerPolicy="no-referrer"
+                  className="max-h-28 max-w-full object-contain"
+                />
+              ) : (
+                <div className="text-center text-xs text-slate-400 flex flex-col items-center gap-1">
+                  <ImageIcon className="w-5 h-5 text-slate-300" />
+                  <span>ยังไม่ได้อัปโหลดหน้าสมุดธนาคาร</span>
+                </div>
+              )}
+            </div>
+
+            <input
+              ref={bankBookInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleUploadBankBook}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => bankBookInputRef.current?.click()}
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5 text-purple-700" />
+              <span>เลือกไฟล์รูปหน้าสมุดธนาคาร...</span>
             </button>
           </div>
         </div>
