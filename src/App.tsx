@@ -2257,6 +2257,7 @@ export default function App() {
                     pageMeta={activePageMeta}
                     docSet={docSet}
                     summary={financialSummary}
+                    className="shadow-xl"
                   />
                 </div>
               ) : (
@@ -2297,6 +2298,7 @@ export default function App() {
                             pageMeta={pageMeta}
                             docSet={docSet}
                             summary={financialSummary}
+                            className="shadow-xl"
                           />
                         </div>
                       </div>
@@ -2320,6 +2322,7 @@ export default function App() {
             pageMeta={pageMeta}
             docSet={docSet}
             summary={financialSummary}
+            className="border-0 shadow-none"
             sheetRef={(el) => {
               pdfSheetRefs.current[pageMeta.key] = el;
             }}

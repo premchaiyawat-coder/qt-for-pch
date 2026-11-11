@@ -53,6 +53,8 @@ export async function exportSelectedPagesToPdf(
       style: {
         transform: 'none',
         boxShadow: 'none',
+        border: 'none',
+        outline: 'none',
         width: '794px',
         minHeight: '1123px',
       },

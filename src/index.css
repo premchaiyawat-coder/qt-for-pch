@@ -34,6 +34,7 @@
   background-color: #ffffff;
   color: #0f172a;
   box-sizing: border-box;
+  border: none !important;
 }
 
 @media print {
