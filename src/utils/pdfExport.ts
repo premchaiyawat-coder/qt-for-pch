@@ -2,6 +2,24 @@ import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { DOCUMENT_PAGES, DocumentPageKey, DocumentSetRecord } from '../types/billing';
 
+let cachedFontEmbedCss: string | null = null;
+
+async function getOrFetchFontEmbedCss(): Promise<string> {
+  if (cachedFontEmbedCss) return cachedFontEmbedCss;
+  try {
+    const res = await fetch(
+      'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&family=Sarabun:wght@400;500;600;700&display=swap'
+    );
+    if (res.ok) {
+      cachedFontEmbedCss = await res.text();
+      return cachedFontEmbedCss;
+    }
+  } catch (err) {
+    console.warn('Could not pre-fetch Google Fonts for PDF:', err);
+  }
+  return '';
+}
+
 export async function exportSelectedPagesToPdf(
   selectedKeys: DocumentPageKey[],
   pageElementsMap: Record<DocumentPageKey, HTMLDivElement | null>,
@@ -12,6 +30,12 @@ export async function exportSelectedPagesToPdf(
   if (orderedPages.length === 0) {
     throw new Error('กรุณาติ๊กเลือกอย่างน้อย 1 หน้าเอกสารก่อนดาวน์โหลด PDF');
   }
+
+  // Ensure all web fonts are fully loaded before capturing
+  if (typeof document !== 'undefined' && document.fonts) {
+    await document.fonts.ready;
+  }
+  const fontEmbedCSS = await getOrFetchFontEmbedCss();
 
   const pdf = new jsPDF({
     orientation: 'portrait',
@@ -32,16 +56,25 @@ export async function exportSelectedPagesToPdf(
       onProgress(`กำลังสร้างหน้า ${i + 1}/${orderedPages.length}: ${pageMeta.thaiTitle}...`);
     }
 
+    const targetHeight = Math.max(1123, el.scrollHeight);
+
     const dataUrl = await toJpeg(el, {
       quality: 0.96,
-      pixelRatio: 2.2,
+      pixelRatio: 2,
       backgroundColor: '#ffffff',
       width: 794,
-      height: Math.max(1123, el.scrollHeight),
+      height: targetHeight,
+      canvasWidth: 794 * 2,
+      canvasHeight: targetHeight * 2,
+      fontEmbedCSS: fontEmbedCSS || undefined,
+      filter: (domNode) => !domNode.classList?.contains('no-print'),
       style: {
         transform: 'none',
         boxShadow: 'none',
         border: 'none',
+        width: '794px',
+        minHeight: '1123px',
+        fontFamily: "'Sarabun', 'IBM Plex Sans Thai', -apple-system, sans-serif",
       },
     });
 

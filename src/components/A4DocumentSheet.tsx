@@ -120,7 +120,7 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
             <div className="text-xs font-semibold tracking-widest text-slate-500 mt-0.5">
               {pageMeta.englishTitle}
             </div>
-            <div className="text-[11px] text-slate-500 mt-1">
+            <div className="text-[11px] text-slate-500 mt-1 whitespace-nowrap">
               ต้นฉบับ / Original (เอกสารออกเป็นชุด)
             </div>
           </div>
@@ -128,33 +128,35 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
 
         {/* Customer Info & Document Metadata Grid */}
         <div className="grid grid-cols-12 gap-6 py-4 border-b border-slate-200 text-xs">
-          {/* Customer Details (Left 7 cols) */}
-          <div className="col-span-7 pr-4 border-r border-slate-200">
+          {/* Customer Details (Left 6 cols) */}
+          <div className="col-span-6 pr-4 border-r border-slate-200">
             <div className="text-[11px] font-semibold text-slate-500 mb-1">
               ลูกค้า / นามผู้รับบริการ (Customer)
             </div>
-            <div className="text-sm font-bold text-slate-900">
+            <div className="text-sm font-bold text-slate-900 leading-snug">
               {docSet.customerName || 'ระบุชื่อลูกค้า / บริษัท'}
             </div>
-            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed break-words">
               {docSet.customerAddress || '-'}
             </p>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-700 mt-2 font-mono-tabular">
-              <span>เลขประจำตัวผู้เสียภาษี {docSet.customerTaxId || '-'}</span>
+              <span className="whitespace-nowrap">เลขประจำตัวผู้เสียภาษี {docSet.customerTaxId || '-'}</span>
               {docSet.customerBranch && (
                 <>
                   <span aria-hidden="true">·</span>
-                  <span>{docSet.customerBranch}</span>
+                  <span className="whitespace-nowrap">{docSet.customerBranch}</span>
                 </>
               )}
             </div>
             {(docSet.customerContact || docSet.customerPhone || docSet.customerEmail) && (
-              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600 mt-1">
-                {docSet.customerContact && <span>ผู้ติดต่อ: {docSet.customerContact}</span>}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-600 mt-1.5 leading-relaxed">
+                {docSet.customerContact && (
+                  <span className="break-words">ผู้ติดต่อ: {docSet.customerContact}</span>
+                )}
                 {docSet.customerPhone && (
                   <>
                     {docSet.customerContact && <span aria-hidden="true">·</span>}
-                    <span className="font-mono-tabular">โทร {docSet.customerPhone}</span>
+                    <span className="font-mono-tabular whitespace-nowrap">โทร {docSet.customerPhone}</span>
                   </>
                 )}
                 {docSet.customerEmail && (
@@ -162,59 +164,59 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
                     {(docSet.customerContact || docSet.customerPhone) && (
                       <span aria-hidden="true">·</span>
                     )}
-                    <span>{docSet.customerEmail}</span>
+                    <span className="break-all">{docSet.customerEmail}</span>
                   </>
                 )}
               </div>
             )}
           </div>
 
-          {/* Document Metadata (Right 5 cols) - Dates formatted as DD/MM/YYYY */}
-          <div className="col-span-5 flex flex-col justify-between space-y-1.5">
+          {/* Document Metadata (Right 6 cols) - Dates formatted as DD/MM/YYYY */}
+          <div className="col-span-6 flex flex-col justify-between space-y-1.5 pl-2">
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-slate-500">เลขที่เอกสาร / No.</span>
-              <span className="font-mono-tabular font-bold text-slate-900 text-sm">
+              <span className="text-slate-500 whitespace-nowrap">เลขที่เอกสาร / No.</span>
+              <span className="font-mono-tabular font-bold text-slate-900 text-sm whitespace-nowrap">
                 {docNumber}
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-slate-500">{pageMeta.dateLabel}</span>
-              <span className="font-mono-tabular font-medium text-slate-900">
+              <span className="text-slate-500 whitespace-nowrap">{pageMeta.dateLabel}</span>
+              <span className="font-mono-tabular font-medium text-slate-900 whitespace-nowrap">
                 {formatDateDMY(docSet.issueDate)}
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-slate-500">{pageMeta.dueDateLabel}</span>
-              <span className="font-mono-tabular font-medium text-slate-900">
+              <span className="text-slate-500 whitespace-nowrap">{pageMeta.dueDateLabel}</span>
+              <span className="font-mono-tabular font-medium text-slate-900 whitespace-nowrap">
                 {formatDateDMY(secondaryDateRaw)}
               </span>
             </div>
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-slate-500">อ้างอิง / Ref. PO</span>
-              <span className="font-mono-tabular font-medium text-slate-800">
+              <span className="text-slate-500 whitespace-nowrap">อ้างอิง / Ref. PO</span>
+              <span className="font-mono-tabular font-medium text-slate-800 whitespace-nowrap">
                 {docSet.referenceNo || '-'}
               </span>
             </div>
             {pageMeta.key === 'billingNote' && (
               <div className="flex items-baseline justify-between gap-2 pt-1 border-t border-slate-100">
-                <span className="text-slate-500">อ้างอิงใบแจ้งหนี้</span>
-                <span className="font-mono-tabular font-semibold text-indigo-700">
+                <span className="text-slate-500 whitespace-nowrap">อ้างอิงใบแจ้งหนี้</span>
+                <span className="font-mono-tabular font-semibold text-indigo-700 whitespace-nowrap">
                   {docSet.invoiceNo || '-'}
                 </span>
               </div>
             )}
             {pageMeta.key === 'invoice' && (
               <div className="flex items-baseline justify-between gap-2 pt-1 border-t border-slate-100">
-                <span className="text-slate-500">อ้างอิงใบเสนอราคา</span>
-                <span className="font-mono-tabular font-semibold text-amber-700">
+                <span className="text-slate-500 whitespace-nowrap">อ้างอิงใบเสนอราคา</span>
+                <span className="font-mono-tabular font-semibold text-amber-700 whitespace-nowrap">
                   {docSet.quotationNo || '-'}
                 </span>
               </div>
             )}
             {pageMeta.key === 'receipt' && (
               <div className="flex items-baseline justify-between gap-2 pt-1 border-t border-slate-100">
-                <span className="text-slate-500">อ้างอิงใบแจ้งหนี้</span>
-                <span className="font-mono-tabular font-semibold text-emerald-700">
+                <span className="text-slate-500 whitespace-nowrap">อ้างอิงใบแจ้งหนี้</span>
+                <span className="font-mono-tabular font-semibold text-emerald-700 whitespace-nowrap">
                   {docSet.invoiceNo || '-'}
                 </span>
               </div>
@@ -224,15 +226,10 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
 
         {/* Project / Job Subject Banner */}
         <div className="py-2.5 px-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-4 text-xs">
-          <div>
-            <span className="font-semibold text-slate-600 mr-2">ชื่องาน / โครงการ (Project):</span>
+          <div className="flex-1 min-w-0">
+            <span className="font-semibold text-slate-600 mr-2 whitespace-nowrap">ชื่องาน / โครงการ (Project):</span>
             <span className="font-bold text-slate-900">{docSet.projectTitle || '-'}</span>
           </div>
-          {docSet.customerId && (
-            <span className="text-[11px] text-slate-500 font-mono-tabular shrink-0">
-              รหัสอ้างอิงลูกค้า: {docSet.customerId.slice(0, 14)}
-            </span>
-          )}
         </div>
 
         {/* Line Items Table */}
@@ -298,21 +295,21 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
 
             {/* Summary & Tax Breakdown Section */}
             <div className="grid grid-cols-12 gap-6 mt-4 pt-2">
-              {/* Left 7 Cols: Thai Baht Text, WHT Info, Bank Info, Notes */}
-              <div className="col-span-7 flex flex-col justify-between space-y-3 text-xs">
+              {/* Left 6 Cols: Thai Baht Text, WHT Info, Bank Info, Notes */}
+              <div className="col-span-6 flex flex-col justify-between space-y-3 text-xs">
                 <div className="p-3 bg-slate-50 border border-slate-200">
-                  <div className="text-[11px] text-slate-500">
+                  <div className="text-[11px] text-slate-500 whitespace-nowrap">
                     จำนวนเงินรวมทั้งสิ้น (ตัวอักษร)
                   </div>
-                  <div className="font-bold text-slate-900 text-sm mt-0.5">
+                  <div className="font-bold text-slate-900 text-sm mt-0.5 leading-snug">
                     ({summary.grandTotalThaiText})
                   </div>
                   {docSet.whtEnabled && (
                     <div className="mt-2 pt-2 border-t border-slate-200 flex items-baseline justify-between gap-2 text-[11px]">
-                      <span className="text-slate-600">
+                      <span className="text-slate-600 whitespace-nowrap">
                         ยอดชำระสุทธิหลังหัก ณ ที่จ่าย {docSet.whtRate}%:
                       </span>
-                      <span className="font-semibold text-slate-900">
+                      <span className="font-semibold text-slate-900 text-right leading-tight">
                         ({summary.netPayableThaiText})
                       </span>
                     </div>
@@ -342,7 +339,7 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
                 {docSet.sellerBankInfo && pageMeta.key !== 'quotation' && (
                   <div className="text-xs text-slate-700">
                     <span className="font-semibold text-slate-900">ช่องทางการชำระเงิน: </span>
-                    <span>{docSet.sellerBankInfo}</span>
+                    <span className="break-words">{docSet.sellerBankInfo}</span>
                   </div>
                 )}
 
@@ -358,19 +355,19 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
                 )}
               </div>
 
-              {/* Right 5 Cols: Numeric Totals & Withholding Tax Breakdown */}
-              <div className="col-span-5 text-xs space-y-1.5">
-                <div className="flex items-center justify-between py-1 border-b border-slate-200">
-                  <span className="text-slate-600">รวมเป็นเงิน (Subtotal)</span>
-                  <span className="font-mono-tabular font-medium text-slate-900">
+              {/* Right 6 Cols: Numeric Totals & Withholding Tax Breakdown */}
+              <div className="col-span-6 text-xs space-y-1.5">
+                <div className="flex items-center justify-between py-1.5 px-3 border-b border-slate-200">
+                  <span className="text-slate-600 whitespace-nowrap">รวมเป็นเงิน (Subtotal)</span>
+                  <span className="font-mono-tabular font-medium text-slate-900 whitespace-nowrap">
                     {formatCurrency(summary.rawSubtotal)}
                   </span>
                 </div>
 
                 {/* Grand Total Row */}
-                <div className="flex items-center justify-between py-2 px-2.5 bg-slate-900 text-white font-bold text-sm">
-                  <span>จำนวนเงินรวมทั้งสิ้น</span>
-                  <span className="font-mono-tabular">
+                <div className="flex items-center justify-between py-2 px-3 bg-slate-900 text-white font-bold text-sm min-h-[40px]">
+                  <span className="whitespace-nowrap">จำนวนเงินรวมทั้งสิ้น</span>
+                  <span className="font-mono-tabular whitespace-nowrap">
                     ฿{formatCurrency(summary.grandTotal)}
                   </span>
                 </div>
@@ -378,25 +375,25 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
                 {/* Withholding Tax Deduction Section */}
                 {docSet.whtEnabled && (
                   <div className="pt-1.5 space-y-1.5">
-                    <div className="flex items-center justify-between py-1 px-2 bg-amber-50 border border-amber-200 text-amber-950">
-                      <div>
-                        <div className="font-semibold">
+                    <div className="flex items-center justify-between py-1.5 px-3 bg-amber-50 border border-amber-200 text-amber-950 min-h-[38px]">
+                      <div className="pr-2">
+                        <div className="font-semibold whitespace-nowrap">
                           หักภาษี ณ ที่จ่าย {docSet.whtRate}%
                         </div>
                         {docSet.whtType && (
-                          <div className="text-[10px] text-amber-800">
+                          <div className="text-[10px] text-amber-800 leading-tight">
                             ({docSet.whtType})
                           </div>
                         )}
                       </div>
-                      <span className="font-mono-tabular font-semibold text-amber-900">
+                      <span className="font-mono-tabular font-semibold text-amber-900 whitespace-nowrap">
                         -{formatCurrency(summary.whtAmount)}
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between py-2 px-2.5 border-2 border-slate-900 font-bold text-sm text-slate-900">
-                      <span>ยอดชำระสุทธิ (Net Payable)</span>
-                      <span className="font-mono-tabular">
+                    <div className="flex items-center justify-between py-2 px-3 border-2 border-slate-900 font-bold text-sm text-slate-900 min-h-[40px]">
+                      <span className="whitespace-nowrap">ยอดชำระสุทธิ (Net Payable)</span>
+                      <span className="font-mono-tabular whitespace-nowrap">
                         ฿{formatCurrency(summary.netPayable)}
                       </span>
                     </div>
