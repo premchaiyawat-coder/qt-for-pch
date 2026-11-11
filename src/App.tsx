@@ -2312,7 +2312,7 @@ export default function App() {
       {/* Hidden Offscreen Full-Scale A4 Renderer for Instant Multi-Page PDF Capture */}
       <div
         aria-hidden="true"
-        className="no-print fixed top-0 -left-[9999px] w-[794px] overflow-hidden pointer-events-none opacity-0"
+        className="no-print fixed top-0 -left-[9999px] w-[794px] overflow-hidden pointer-events-none -z-50"
       >
         {DOCUMENT_PAGES.map((pageMeta) => (
           <A4DocumentSheet

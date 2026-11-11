@@ -62,7 +62,9 @@ export const A4DocumentSheet: React.FC<A4DocumentSheetProps> = ({
     <div
       ref={sheetRef}
       data-doc-page={pageMeta.key}
-      className={`a4-sheet font-doc bg-white text-slate-900 p-10 flex flex-col justify-between border border-slate-200 shadow-sm ${className}`}
+      className={`a4-sheet font-doc bg-white text-slate-900 p-10 flex flex-col justify-between ${
+        className.includes('border-0') ? 'border-0' : 'border border-slate-200'
+      } ${className.includes('shadow-none') ? 'shadow-none' : 'shadow-sm'} ${className}`}
     >
       {/* Top Content Area */}
       <div>

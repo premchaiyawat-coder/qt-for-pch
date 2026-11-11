@@ -1,24 +1,7 @@
-import { toJpeg } from 'html-to-image';
+import { toPng } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { DOCUMENT_PAGES, DocumentPageKey, DocumentSetRecord } from '../types/billing';
-
-let cachedFontEmbedCss: string | null = null;
-
-async function getOrFetchFontEmbedCss(): Promise<string> {
-  if (cachedFontEmbedCss) return cachedFontEmbedCss;
-  try {
-    const res = await fetch(
-      'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@500;600;700&family=Sarabun:wght@400;500;600;700&display=swap'
-    );
-    if (res.ok) {
-      cachedFontEmbedCss = await res.text();
-      return cachedFontEmbedCss;
-    }
-  } catch (err) {
-    console.warn('Could not pre-fetch Google Fonts for PDF:', err);
-  }
-  return '';
-}
+import { EMBEDDED_FONTS_CSS } from './embeddedFonts';
 
 export async function exportSelectedPagesToPdf(
   selectedKeys: DocumentPageKey[],
@@ -35,7 +18,6 @@ export async function exportSelectedPagesToPdf(
   if (typeof document !== 'undefined' && document.fonts) {
     await document.fonts.ready;
   }
-  const fontEmbedCSS = await getOrFetchFontEmbedCss();
 
   const pdf = new jsPDF({
     orientation: 'portrait',
@@ -58,23 +40,21 @@ export async function exportSelectedPagesToPdf(
 
     const targetHeight = Math.max(1123, el.scrollHeight);
 
-    const dataUrl = await toJpeg(el, {
-      quality: 0.96,
+    // Generate lossless 2x PNG with embedded base64 Sarabun/IBM Plex/JetBrains fonts
+    const dataUrl = await toPng(el, {
       pixelRatio: 2,
       backgroundColor: '#ffffff',
       width: 794,
       height: targetHeight,
       canvasWidth: 794 * 2,
       canvasHeight: targetHeight * 2,
-      fontEmbedCSS: fontEmbedCSS || undefined,
+      fontEmbedCSS: EMBEDDED_FONTS_CSS,
       filter: (domNode) => !domNode.classList?.contains('no-print'),
       style: {
         transform: 'none',
         boxShadow: 'none',
-        border: 'none',
         width: '794px',
         minHeight: '1123px',
-        fontFamily: "'Sarabun', 'IBM Plex Sans Thai', -apple-system, sans-serif",
       },
     });
 
@@ -82,7 +62,7 @@ export async function exportSelectedPagesToPdf(
       pdf.addPage('a4', 'portrait');
     }
 
-    pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidthMm, pdfHeightMm, undefined, 'FAST');
+    pdf.addImage(dataUrl, 'PNG', 0, 0, pdfWidthMm, pdfHeightMm, undefined, 'FAST');
   }
 
   // Construct descriptive filename
