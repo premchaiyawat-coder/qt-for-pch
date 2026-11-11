@@ -19,8 +19,12 @@ import {
   EyeOff,
   HelpCircle,
   ExternalLink,
+  Copy,
+  Check,
+  ShieldAlert,
 } from 'lucide-react';
 import { auth, googleProvider } from '../firebase';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -39,13 +43,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [isUnauthorizedDomain, setIsUnauthorizedDomain] = useState(false);
   const [showConfigHelp, setShowConfigHelp] = useState(false);
+  const [copiedDomain, setCopiedDomain] = useState(false);
 
   if (!isOpen) return null;
+
+  const currentHostname = typeof window !== 'undefined' ? window.location.hostname : '';
+  const projectId = firebaseConfig.projectId || 'ivory-air-ccjpc';
+  const authorizedDomainsUrl = `https://console.firebase.google.com/project/${projectId}/authentication/settings`;
+  const providersUrl = `https://console.firebase.google.com/project/${projectId}/authentication/providers`;
 
   const resetFormState = () => {
     setErrorMsg(null);
     setSuccessMsg(null);
+    setIsUnauthorizedDomain(false);
     setPassword('');
     setConfirmPassword('');
   };
@@ -55,22 +67,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     resetFormState();
   };
 
+  const handleCopyDomain = () => {
+    if (currentHostname) {
+      navigator.clipboard.writeText(currentHostname);
+      setCopiedDomain(true);
+      setTimeout(() => setCopiedDomain(false), 2500);
+    }
+  };
+
   const getFriendlyErrorMessage = (error: unknown): string => {
     const errCode = (error as { code?: string })?.code || '';
     const rawMsg = error instanceof Error ? error.message : String(error);
 
-    if (errCode === 'auth/operation-not-allowed') {
+    if (errCode === 'auth/unauthorized-domain' || rawMsg.includes('auth/unauthorized-domain')) {
+      setIsUnauthorizedDomain(true);
+      return 'โดเมนของเว็บไซต์นี้ยังไม่ได้รับอนุญาตใน Firebase Authentication (auth/unauthorized-domain)';
+    }
+    if (errCode === 'auth/operation-not-allowed' || rawMsg.includes('auth/operation-not-allowed')) {
       setShowConfigHelp(true);
-      return 'บริการเข้าสู่ระบบด้วย Email/Password ยังไม่ได้เปิดใช้งานใน Firebase Console กรุณาเปิดใช้งานก่อน (ดูวิธีตั้งค่าด้านล่าง)';
+      return 'บริการเข้าสู่ระบบด้วย Email/Password ยังไม่ได้เปิดใช้งานใน Firebase Console กรุณาเปิดใช้งานก่อน (ดูขั้นตอนด้านล่าง)';
     }
     if (errCode === 'auth/user-not-found') {
-      return 'ไม่พบบัญชีผู้ใช้นี้ในระบบ กรุณาตรวจสอบอีเมลหรือสมัครสมาชิกใหม่';
+      return 'ไม่พบบัญชีผู้ใช้นี้ในระบบ หากเพิ่งใช้งานครั้งแรก กรุณาเลือกแท็บ "สมัครสมาชิกใหม่ (Register)" ด้านบน';
     }
     if (errCode === 'auth/wrong-password' || errCode === 'auth/invalid-credential') {
-      return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง';
+      return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง (หากเพิ่งใช้งานครั้งแรก กรุณาเลือกแท็บ "สมัครสมาชิกใหม่" ก่อนครับ)';
     }
     if (errCode === 'auth/email-already-in-use') {
-      return 'อีเมลนี้ถูกลงทะเบียนใช้งานแล้ว กรุณาเข้าสู่ระบบ หรือใช้เมนูลืมรหัสผ่าน';
+      return 'อีเมลนี้ถูกลงทะเบียนไว้แล้ว กรุณาเข้าสู่ระบบด้วยรหัสผ่าน หรือใช้เมนูลืมรหัสผ่าน';
     }
     if (errCode === 'auth/weak-password') {
       return 'รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษรขึ้นไป';
@@ -91,6 +115,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     e.preventDefault();
     setErrorMsg(null);
     setSuccessMsg(null);
+    setIsUnauthorizedDomain(false);
     setShowConfigHelp(false);
 
     const cleanEmail = email.trim();
@@ -142,7 +167,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         try {
           await sendEmailVerification(cred.user);
         } catch {
-          // Non-blocking if verification send fails
+          // Non-blocking
         }
         onSuccess(cred.user.email || cleanEmail);
         onClose();
@@ -157,6 +182,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const handleGoogleSignIn = async () => {
     setErrorMsg(null);
     setSuccessMsg(null);
+    setIsUnauthorizedDomain(false);
     setLoading(true);
     try {
       const cred = await signInWithPopup(auth, googleProvider);
@@ -171,9 +197,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-md w-full overflow-hidden">
+      <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden max-h-[92vh] flex flex-col">
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/60">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/60 shrink-0">
           <div>
             <h3 className="text-base font-bold text-slate-900">
               {mode === 'login' && 'เข้าสู่ระบบเพื่อซิงค์ข้อมูลบนคลาวด์'}
@@ -194,7 +220,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         </div>
 
         {/* Mode Switcher Tabs */}
-        <div className="grid grid-cols-2 p-1.5 bg-slate-100 mx-6 mt-5 rounded-lg text-xs font-semibold">
+        <div className="grid grid-cols-2 p-1.5 bg-slate-100 mx-6 mt-4 rounded-lg text-xs font-semibold shrink-0">
           <button
             type="button"
             onClick={() => switchMode('login')}
@@ -219,12 +245,86 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 pt-4 space-y-4">
-          {errorMsg && (
+        {/* Modal Scrollable Body */}
+        <div className="p-6 pt-4 space-y-4 overflow-y-auto">
+          {/* General Error Message */}
+          {errorMsg && !isUnauthorizedDomain && (
             <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg flex items-start gap-2.5 text-xs text-rose-800">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
               <div className="leading-relaxed">{errorMsg}</div>
+            </div>
+          )}
+
+          {/* Dedicated Solution Card for auth/unauthorized-domain */}
+          {isUnauthorizedDomain && (
+            <div className="p-4 bg-amber-50/90 border border-amber-300 rounded-xl space-y-3 text-xs text-amber-950 animate-in fade-in duration-150">
+              <div className="flex items-start gap-2.5">
+                <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <div className="font-bold text-amber-950 text-sm">
+                    โดเมนยังไม่ได้รับอนุญาตใน Firebase (auth/unauthorized-domain)
+                  </div>
+                  <p className="text-amber-800 leading-relaxed text-[11px]">
+                    Firebase Authentication กำหนดว่าการเข้าสู่ระบบผ่าน <strong>Google</strong> ต้องเพิ่มชื่อโดเมนของเว็บไซต์นี้ลงในรายการ <strong>Authorized domains</strong> ก่อน
+                  </p>
+                </div>
+              </div>
+
+              {/* Hostname with 1-Click Copy */}
+              <div className="p-2.5 bg-white border border-amber-200 rounded-lg flex items-center justify-between gap-2 shadow-2xs">
+                <div className="min-w-0">
+                  <div className="text-[10px] text-slate-400 font-medium">ชื่อโดเมนของแอปคุณ (Domain):</div>
+                  <div className="font-mono text-xs text-slate-900 font-semibold truncate select-all">
+                    {currentHostname}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyDomain}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-amber-900 bg-amber-100 hover:bg-amber-200 rounded-md transition-colors shrink-0 cursor-pointer"
+                >
+                  {copiedDomain ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedDomain ? 'คัดลอกแล้ว!' : 'คัดลอกโดเมน'}</span>
+                </button>
+              </div>
+
+              {/* Step-by-Step Fix Instructions */}
+              <div className="space-y-1.5 text-[11px] bg-white/70 p-3 rounded-lg border border-amber-200/80">
+                <div className="font-bold text-slate-900 flex items-center justify-between">
+                  <span>ขั้นตอนแก้ไขสำหรับ Google Sign-In (ทำเพียงครั้งเดียว):</span>
+                  <a
+                    href={authorizedDomainsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-blue-700 hover:text-blue-900 font-semibold hover:underline"
+                  >
+                    <span>เปิดหน้าตั้งค่า Firebase</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                  <li>
+                    คลิกลิงก์ <strong>"เปิดหน้าตั้งค่า Firebase"</strong> ด้านบน (หรือไปที่ Firebase Console &gt; Authentication &gt; Settings)
+                  </li>
+                  <li>เลื่อนลงมาที่หัวข้อ <strong>Authorized domains (โดเมนที่ได้รับอนุญาต)</strong></li>
+                  <li>
+                    กดปุ่ม <strong>Add domain (เพิ่มโดเมน)</strong>
+                  </li>
+                  <li>
+                    วางโดเมนที่คัดลอกไว้ หรือใส่ <code className="bg-amber-100 px-1 py-0.5 rounded font-mono font-bold text-amber-900">run.app</code> แล้วกด <strong>Add</strong>
+                  </li>
+                </ol>
+              </div>
+
+              {/* Immediate Alternative: Email / Password */}
+              <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-[11px] text-blue-900 leading-relaxed flex items-start gap-2">
+                <span className="text-base leading-none">💡</span>
+                <div>
+                  <strong>หรือ เข้าสู่ระบบด้วย Email & Password ได้ทันที:</strong>
+                  <br />
+                  หากคุณกรอกอีเมลและรหัสผ่านไว้แล้ว ให้กดปุ่มสีน้ำเงิน <strong>"เข้าสู่ระบบด้วย Email"</strong> ด้านล่าง (หรือหากยังไม่มีบัญชี ให้กดแท็บ <strong>"สมัครสมาชิกใหม่"</strong> ด้านบน) วิธีนี้จะสามารถเข้าสู่ระบบและบันทึกข้อมูลบนคลาวด์ได้ทันทีครับ
+                </div>
+              </div>
             </div>
           )}
 
@@ -312,11 +412,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               </div>
             )}
 
-            {/* Submit Button */}
+            {/* Primary Submit Button */}
             <button
               type="submit"
               disabled={loading}
-              className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-semibold text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-60 cursor-pointer"
+              className="w-full inline-flex items-center justify-center gap-2 py-2.5 px-4 text-xs font-semibold text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-60 cursor-pointer shadow-xs"
             >
               {loading ? (
                 <span>กำลังดำเนินการ...</span>
@@ -352,12 +452,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
           )}
 
           {/* Divider */}
-          <div className="relative my-4">
+          <div className="relative my-3">
             <div className="absolute inset-0 flex items-center">
               <div className="w-full border-t border-slate-200" />
             </div>
             <div className="relative flex justify-center text-[11px] uppercase tracking-wider text-slate-400">
-              <span className="bg-white px-2">หรือ</span>
+              <span className="bg-white px-2">หรือเข้าสู่ระบบด้วย Google</span>
             </div>
           </div>
 
@@ -389,7 +489,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
             <span>เข้าสู่ระบบด้วย Google</span>
           </button>
 
-          {/* Firebase Console Configuration Instructions (if needed) */}
+          {/* Firebase Console Configuration Instructions */}
           <div className="pt-2 border-t border-slate-100">
             <button
               type="button"
@@ -405,24 +505,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 <div className="font-semibold text-blue-900 flex items-center justify-between">
                   <span>ขั้นตอนการเปิดใช้งานใน Firebase Console:</span>
                   <a
-                    href="https://console.firebase.google.com"
+                    href={providersUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-0.5 text-blue-700 hover:underline"
+                    className="inline-flex items-center gap-0.5 text-blue-700 hover:underline font-semibold"
                   >
-                    <span>Firebase Console</span>
+                    <span>หน้า Sign-in method</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
                 <ol className="list-decimal list-inside space-y-1 text-slate-600">
-                  <li>เปิด <strong>Firebase Console</strong> เลือกโปรเจกต์ของคุณ</li>
-                  <li>คลิกเมนู <strong>Authentication</strong> จากแถบซ้าย</li>
-                  <li>ไปที่แท็บ <strong>Sign-in method</strong></li>
+                  <li>เปิด <strong>Firebase Console</strong> เลือกโปรเจกต์ <strong>{projectId}</strong></li>
+                  <li>คลิกเมนู <strong>Authentication</strong> &gt; แท็บ <strong>Sign-in method</strong></li>
                   <li>คลิกเลือก <strong>Email/Password</strong></li>
                   <li>เปิดสวิตช์ <strong>Enable</strong> แล้วกด <strong>Save</strong></li>
                 </ol>
                 <div className="text-[10px] text-slate-500 pt-1">
-                  * เมื่อเปิดใช้งานแล้ว สามารถเข้าสู่ระบบด้วย Email และรหัสผ่านเพื่อจดจำข้อมูลบนคลาวด์ได้ทันที
+                  * เมื่อเปิดใช้งานแล้ว สามารถเข้าสู่ระบบและสมัครสมาชิกด้วย Email และรหัสผ่านเพื่อจดจำข้อมูลบนคลาวด์ได้ทันที
                 </div>
               </div>
             )}
