@@ -246,6 +246,18 @@
           "maxLength": 150,
           "description": "Authorized issuer / signer name."
         },
+        "sellerLogoDataUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 350000,
+          "description": "Resized PNG data URL for seller store logo."
+        },
+        "sellerSignatureDataUrl": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 350000,
+          "description": "Resized PNG data URL for authorized signature."
+        },
         "discountAmount": {
           "type": "number",
           "description": "Total discount amount before tax."

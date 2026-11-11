@@ -106,6 +106,8 @@ export const BLUEPRINT_CONSTRAINTS = {
     emailMax: 150,
     bankInfoMax: 400,
     signerMax: 150,
+    logoDataUrlMax: 350000,
+    signatureDataUrlMax: 350000,
     whtTypeMax: 150,
     paymentMethodMax: 100,
     notesMax: 1000,

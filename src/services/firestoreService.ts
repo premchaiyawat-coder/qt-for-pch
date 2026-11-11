@@ -22,6 +22,33 @@ import {
   WorkLineItem,
 } from '../types/billing';
 
+/**
+ * Scopes a document ID to the authenticated user's UID to prevent top-level ID collisions
+ * across accounts while keeping IDs deterministic across all devices for the same user.
+ */
+export function scopeCloudId(uid: string, rawId: string): string {
+  const cleanUid = sanitizeId(uid).slice(0, 28);
+  const cleanId = sanitizeId(rawId);
+  const prefix = `u_${cleanUid}_`;
+  if (cleanId.startsWith(prefix)) {
+    return cleanId.slice(0, BLUEPRINT_CONSTRAINTS.ID_MAX_LEN);
+  }
+  const stripped = cleanId.replace(/^u_[a-zA-Z0-9_\-]{1,32}_/, '');
+  return `${prefix}${stripped}`.slice(0, BLUEPRINT_CONSTRAINTS.ID_MAX_LEN);
+}
+
+export function getTimestampMillis(ts: unknown): number {
+  if (!ts) return 0;
+  if (typeof ts === 'number') return ts;
+  if (typeof (ts as { toMillis?: () => number }).toMillis === 'function') {
+    return (ts as { toMillis: () => number }).toMillis();
+  }
+  if (typeof (ts as { seconds?: number }).seconds === 'number') {
+    return (ts as { seconds: number }).seconds * 1000;
+  }
+  return 0;
+}
+
 export function subscribeUserCustomers(
   uid: string,
   onData: (customers: CustomerRecord[]) => void
@@ -62,8 +89,8 @@ export async function saveCustomerToFirestore(
   uid: string,
   customer: CustomerRecord,
   isExistingInCloud: boolean
-): Promise<void> {
-  const customerId = sanitizeId(customer.id);
+): Promise<string> {
+  const customerId = scopeCloudId(uid, customer.id);
   const path = `customers/${customerId}`;
   const C = BLUEPRINT_CONSTRAINTS.CUSTOMER;
 
@@ -90,6 +117,7 @@ export async function saveCustomerToFirestore(
         createdAt: serverTimestamp(),
       });
     }
+    return customerId;
   } catch (error) {
     handleFirestoreError(
       error,
@@ -99,8 +127,11 @@ export async function saveCustomerToFirestore(
   }
 }
 
-export async function deleteCustomerFromFirestore(customerIdRaw: string): Promise<void> {
-  const customerId = sanitizeId(customerIdRaw);
+export async function deleteCustomerFromFirestore(
+  uid: string,
+  customerIdRaw: string
+): Promise<void> {
+  const customerId = scopeCloudId(uid, customerIdRaw);
   const path = `customers/${customerId}`;
   try {
     await deleteDoc(doc(db, 'customers', customerId));
@@ -147,9 +178,11 @@ export function subscribeUserDocumentSets(
           sellerEmail: String(d.sellerEmail || ''),
           sellerBankInfo: String(d.sellerBankInfo || ''),
           sellerSignerName: String(d.sellerSignerName || ''),
+          sellerLogoDataUrl: String(d.sellerLogoDataUrl || ''),
+          sellerSignatureDataUrl: String(d.sellerSignatureDataUrl || ''),
           discountAmount: 0,
           vatMode: d.vatMode === 'none' ? 'none' : 'include',
-          vatRate: Number(d.vatRate ?? 7),
+          vatRate: Number(d.vatRate ?? 0),
           whtEnabled: Boolean(d.whtEnabled),
           whtRate: Number(d.whtRate ?? 3),
           whtType: String(d.whtType || ''),
@@ -160,6 +193,8 @@ export function subscribeUserDocumentSets(
           updatedAt: d.updatedAt,
         };
       });
+      // Sort most recently updated first so list[0] is the latest active workspace
+      list.sort((a, b) => getTimestampMillis(b.updatedAt) - getTimestampMillis(a.updatedAt));
       onData(list);
     },
     (error) => {
@@ -172,7 +207,7 @@ export async function fetchDocumentItems(
   uid: string,
   docSetIdRaw: string
 ): Promise<WorkLineItem[]> {
-  const docSetId = sanitizeId(docSetIdRaw);
+  const docSetId = scopeCloudId(uid, docSetIdRaw);
   const path = `documentSets/${docSetId}/items`;
   try {
     const q = query(
@@ -205,16 +240,15 @@ export async function saveDocumentSetToFirestore(
   docSet: DocumentSetRecord,
   isExistingInCloud: boolean,
   validCloudCustomerIds: Set<string>
-): Promise<void> {
-  const docSetId = sanitizeId(docSet.id);
+): Promise<string> {
+  const docSetId = scopeCloudId(uid, docSet.id);
   const path = `documentSets/${docSetId}`;
   const D = BLUEPRINT_CONSTRAINTS.DOC_SET;
   const I = BLUEPRINT_CONSTRAINTS.DOC_ITEM;
 
+  const scopedCusId = docSet.customerId ? scopeCloudId(uid, docSet.customerId) : '';
   const safeCustomerId =
-    docSet.customerId && validCloudCustomerIds.has(sanitizeId(docSet.customerId))
-      ? sanitizeId(docSet.customerId)
-      : '';
+    scopedCusId && validCloudCustomerIds.has(scopedCusId) ? scopedCusId : '';
 
   const mutableDocFields = {
     projectTitle: clampString(docSet.projectTitle, D.projectTitleMax, 'โครงการบริการทั่วไป'),
@@ -241,9 +275,15 @@ export async function saveDocumentSetToFirestore(
     sellerEmail: clampString(docSet.sellerEmail, D.emailMax, ''),
     sellerBankInfo: clampString(docSet.sellerBankInfo, D.bankInfoMax, ''),
     sellerSignerName: clampString(docSet.sellerSignerName, D.signerMax, ''),
+    sellerLogoDataUrl: clampString(docSet.sellerLogoDataUrl, D.logoDataUrlMax, ''),
+    sellerSignatureDataUrl: clampString(
+      docSet.sellerSignatureDataUrl,
+      D.signatureDataUrlMax,
+      ''
+    ),
     discountAmount: 0,
     vatMode: docSet.vatMode === 'none' ? 'none' : 'include',
-    vatRate: clampNumber(docSet.vatRate, 0, 100, 7),
+    vatRate: clampNumber(docSet.vatRate, 0, 100, 0),
     whtEnabled: Boolean(docSet.whtEnabled),
     whtRate: clampNumber(docSet.whtRate, 0, 100, 3),
     whtType: clampString(docSet.whtType, D.whtTypeMax, ''),
@@ -274,7 +314,7 @@ export async function saveDocumentSetToFirestore(
   // Sync line items in subcollection
   const existingItems = await fetchDocumentItems(uid, docSetId);
   const existingIds = new Set(existingItems.map((it) => it.id));
-  const incomingIds = new Set(docSet.items.map((it) => sanitizeId(it.id)));
+  const incomingIds = new Set(docSet.items.map((it) => scopeCloudId(uid, it.id)));
 
   for (const oldItem of existingItems) {
     if (!incomingIds.has(oldItem.id)) {
@@ -289,7 +329,7 @@ export async function saveDocumentSetToFirestore(
 
   for (let idx = 0; idx < docSet.items.length; idx++) {
     const item = docSet.items[idx];
-    const itemId = sanitizeId(item.id);
+    const itemId = scopeCloudId(uid, item.id);
     const itemPath = `documentSets/${docSetId}/items/${itemId}`;
     const itemExists = existingIds.has(itemId);
 
@@ -325,13 +365,15 @@ export async function saveDocumentSetToFirestore(
       );
     }
   }
+
+  return docSetId;
 }
 
 export async function deleteDocumentSetFromFirestore(
   uid: string,
   docSetIdRaw: string
 ): Promise<void> {
-  const docSetId = sanitizeId(docSetIdRaw);
+  const docSetId = scopeCloudId(uid, docSetIdRaw);
   const existingItems = await fetchDocumentItems(uid, docSetId);
   for (const item of existingItems) {
     const itemPath = `documentSets/${docSetId}/items/${item.id}`;

@@ -45,8 +45,10 @@ import {
   deleteCustomerFromFirestore,
   deleteDocumentSetFromFirestore,
   fetchDocumentItems,
+  getTimestampMillis,
   saveCustomerToFirestore,
   saveDocumentSetToFirestore,
+  scopeCloudId,
   subscribeUserCustomers,
   subscribeUserDocumentSets,
 } from './services/firestoreService';
@@ -65,6 +67,17 @@ const LOCAL_STORAGE_DOC_KEY = 'syncdoc_active_docset_v1';
 const LOCAL_STORAGE_CUSTOMERS_KEY = 'syncdoc_local_customers_v1';
 const LOCAL_STORAGE_ARCHIVE_KEY = 'syncdoc_local_archive_v1';
 const LOCAL_STORAGE_SEQ_KEY = 'syncdoc_running_seq_v1';
+const LOCAL_STORAGE_MODIFIED_KEY = 'syncdoc_local_modified_at_v1';
+
+function isUntouchedSampleDoc(doc: DocumentSetRecord): boolean {
+  return (
+    doc.projectTitle === DEFAULT_DOCUMENT_SET.projectTitle &&
+    doc.customerName === DEFAULT_DOCUMENT_SET.customerName &&
+    doc.quotationNo === DEFAULT_DOCUMENT_SET.quotationNo &&
+    !doc.sellerLogoDataUrl &&
+    !doc.sellerSignatureDataUrl
+  );
+}
 
 export default function App() {
   // Navigation state
@@ -86,6 +99,8 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [cloudCustomerIds, setCloudCustomerIds] = useState<Set<string>>(new Set());
   const [cloudDocSetIds, setCloudDocSetIds] = useState<Set<string>>(new Set());
+  const [cloudSyncState, setCloudSyncState] = useState<'idle' | 'syncing' | 'synced'>('idle');
+  const [localEditVersion, setLocalEditVersion] = useState(0);
 
   // Active Document Set (synced across all 4 pages)
   const [docSet, setDocSet] = useState<DocumentSetRecord>(() => {
@@ -160,6 +175,21 @@ export default function App() {
   } | null>(null);
   const [isSavingDoc, setIsSavingDoc] = useState(false);
 
+  // Refs for synchronous access inside real-time listeners & debounced auto-save
+  const docSetRef = useRef<DocumentSetRecord>(docSet);
+  docSetRef.current = docSet;
+  const customersRef = useRef<CustomerRecord[]>(customers);
+  customersRef.current = customers;
+  const cloudCustomerIdsRef = useRef<Set<string>>(new Set());
+  const cloudDocSetIdsRef = useRef<Set<string>>(new Set());
+  const hasBootstrappedUidRef = useRef<string | null>(null);
+  const hasBootstrappedCustomersUidRef = useRef<string | null>(null);
+  const localDirtyRef = useRef(false);
+  const lastLocalSaveTimeRef = useRef(0);
+  const localModifiedAtRef = useRef<number>(
+    parseInt(localStorage.getItem(LOCAL_STORAGE_MODIFIED_KEY) || '0', 10) || 0
+  );
+
   // Offscreen full-scale A4 sheet refs for high-res PDF generation
   const pdfSheetRefs = useRef<Record<DocumentPageKey, HTMLDivElement | null>>({
     quotation: null,
@@ -175,56 +205,192 @@ export default function App() {
     }, 3800);
   };
 
+  const markLocalWorkspaceEdited = () => {
+    const now = Date.now();
+    localModifiedAtRef.current = now;
+    localDirtyRef.current = true;
+    try {
+      localStorage.setItem(LOCAL_STORAGE_MODIFIED_KEY, String(now));
+    } catch {
+      // Ignore
+    }
+    setLocalEditVersion((v) => v + 1);
+  };
+
   // Persist active docSet locally on change
   useEffect(() => {
     try {
       localStorage.setItem(LOCAL_STORAGE_DOC_KEY, JSON.stringify(docSet));
+      if (docSet.sellerLogoDataUrl) {
+        localStorage.setItem('syncdoc_seller_logo_v1', docSet.sellerLogoDataUrl);
+      }
+      if (docSet.sellerSignatureDataUrl) {
+        localStorage.setItem('syncdoc_seller_signature_v1', docSet.sellerSignatureDataUrl);
+      }
     } catch {
       // Ignore storage quota errors
     }
   }, [docSet]);
 
-  // Persist local customers when not authenticated
+  // Persist local customers
   useEffect(() => {
-    if (!currentUser) {
-      try {
-        localStorage.setItem(LOCAL_STORAGE_CUSTOMERS_KEY, JSON.stringify(customers));
-      } catch {
-        // Ignore
-      }
+    try {
+      localStorage.setItem(LOCAL_STORAGE_CUSTOMERS_KEY, JSON.stringify(customers));
+    } catch {
+      // Ignore
     }
-  }, [customers, currentUser]);
+  }, [customers]);
 
   // Auth listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
       setCurrentUser(user);
       setAuthReady(true);
+      if (!user) {
+        hasBootstrappedUidRef.current = null;
+        hasBootstrappedCustomersUidRef.current = null;
+        setCloudSyncState('idle');
+      }
     });
     return () => unsub();
   }, []);
 
-  const isCloudReady = Boolean(authReady && currentUser && currentUser.emailVerified);
+  const isCloudReady = Boolean(authReady && currentUser);
 
-  // Firestore real-time listeners when authenticated & verified
+  // Helper to apply a cloud document set + its items into the active 4-page editor
+  const applyCloudDocSetToWorkspace = async (
+    uid: string,
+    cloudDocMeta: Omit<DocumentSetRecord, 'items'>
+  ) => {
+    let loadedItems: WorkLineItem[] = [];
+    try {
+      loadedItems = await fetchDocumentItems(uid, cloudDocMeta.id);
+    } catch {
+      loadedItems = [];
+    }
+
+    const savedLogo = localStorage.getItem('syncdoc_seller_logo_v1') || '';
+    const savedSignature = localStorage.getItem('syncdoc_seller_signature_v1') || '';
+
+    const nextLogo =
+      cloudDocMeta.sellerLogoDataUrl || docSetRef.current.sellerLogoDataUrl || savedLogo;
+    const nextSignature =
+      cloudDocMeta.sellerSignatureDataUrl ||
+      docSetRef.current.sellerSignatureDataUrl ||
+      savedSignature;
+
+    localDirtyRef.current = false;
+    setDocSet({
+      ...cloudDocMeta,
+      discountAmount: 0,
+      vatMode: 'none',
+      vatRate: 0,
+      sellerLogoDataUrl: nextLogo,
+      sellerSignatureDataUrl: nextSignature,
+      items: loadedItems.length > 0 ? loadedItems : docSetRef.current.items,
+    });
+    setCloudSyncState('synced');
+  };
+
+  // Push active local docSet to Cloud Firestore
+  const pushCurrentWorkspaceToCloud = async (uid: string, docToPush: DocumentSetRecord) => {
+    setCloudSyncState('syncing');
+    lastLocalSaveTimeRef.current = Date.now();
+    const scopedId = scopeCloudId(uid, docToPush.id);
+    const existsInCloud = cloudDocSetIdsRef.current.has(scopedId);
+
+    const savedId = await saveDocumentSetToFirestore(
+      uid,
+      { ...docToPush, id: scopedId },
+      existsInCloud,
+      cloudCustomerIdsRef.current
+    );
+
+    cloudDocSetIdsRef.current.add(savedId);
+    setCloudDocSetIds(new Set(cloudDocSetIdsRef.current));
+    localDirtyRef.current = false;
+    lastLocalSaveTimeRef.current = Date.now();
+    setCloudSyncState('synced');
+  };
+
+  // Firestore real-time listeners & cross-device auto-bootstrap when authenticated
   useEffect(() => {
     if (!isCloudReady || !currentUser) {
+      cloudCustomerIdsRef.current = new Set();
+      cloudDocSetIdsRef.current = new Set();
       setCloudCustomerIds(new Set());
       setCloudDocSetIds(new Set());
       return;
     }
 
-    const unsubCustomers = subscribeUserCustomers(currentUser.uid, (cloudCustomers) => {
-      setCloudCustomerIds(new Set(cloudCustomers.map((c) => sanitizeId(c.id))));
+    const uid = currentUser.uid;
+
+    const unsubCustomers = subscribeUserCustomers(uid, async (cloudCustomers) => {
+      const idSet = new Set(cloudCustomers.map((c) => c.id));
+      cloudCustomerIdsRef.current = idSet;
+      setCloudCustomerIds(idSet);
+
       if (cloudCustomers.length > 0) {
         setCustomers(cloudCustomers);
+        hasBootstrappedCustomersUidRef.current = uid;
+      } else if (hasBootstrappedCustomersUidRef.current !== uid) {
+        hasBootstrappedCustomersUidRef.current = uid;
+        // Upload local custom customers to cloud on first sync
+        for (const localCus of customersRef.current) {
+          try {
+            const savedCusId = await saveCustomerToFirestore(uid, localCus, false);
+            cloudCustomerIdsRef.current.add(savedCusId);
+          } catch {
+            // Ignore individual customer sync error
+          }
+        }
+        setCloudCustomerIds(new Set(cloudCustomerIdsRef.current));
       }
     });
 
-    const unsubDocSets = subscribeUserDocumentSets(currentUser.uid, (cloudDocSets) => {
-      setCloudDocSetIds(new Set(cloudDocSets.map((d) => sanitizeId(d.id))));
+    const unsubDocSets = subscribeUserDocumentSets(uid, async (cloudDocSets) => {
+      const idSet = new Set(cloudDocSets.map((d) => d.id));
+      cloudDocSetIdsRef.current = idSet;
+      setCloudDocSetIds(idSet);
+
       if (cloudDocSets.length > 0) {
         setSavedDocSets(cloudDocSets);
+
+        const latestCloudDoc = cloudDocSets[0];
+        const latestCloudMillis = getTimestampMillis(latestCloudDoc.updatedAt);
+
+        if (hasBootstrappedUidRef.current !== uid) {
+          hasBootstrappedUidRef.current = uid;
+          const currentLocal = docSetRef.current;
+          const localIsSample = isUntouchedSampleDoc(currentLocal);
+
+          // If local is sample template OR cloud has a newer/existing document set, load cloud workspace onto screen
+          if (localIsSample || latestCloudMillis >= localModifiedAtRef.current - 2000) {
+            await applyCloudDocSetToWorkspace(uid, latestCloudDoc);
+          } else {
+            // Local device has newer unsaved changes made right before logging in -> push to cloud
+            try {
+              await pushCurrentWorkspaceToCloud(uid, currentLocal);
+            } catch {
+              // Fallback to loading cloud doc if push fails
+              await applyCloudDocSetToWorkspace(uid, latestCloudDoc);
+            }
+          }
+        } else if (
+          !localDirtyRef.current &&
+          Date.now() - lastLocalSaveTimeRef.current > 2500
+        ) {
+          // Real-time update arrived from another device while logged in
+          await applyCloudDocSetToWorkspace(uid, latestCloudDoc);
+        }
+      } else if (hasBootstrappedUidRef.current !== uid) {
+        // Cloud is empty for this account -> push current local workspace to cloud immediately
+        hasBootstrappedUidRef.current = uid;
+        try {
+          await pushCurrentWorkspaceToCloud(uid, docSetRef.current);
+        } catch {
+          // Ignore initial push error
+        }
       }
     });
 
@@ -233,6 +399,22 @@ export default function App() {
       unsubDocSets();
     };
   }, [isCloudReady, currentUser]);
+
+  // Debounced Auto-Save to Cloud Firestore whenever the user edits any field in docSet
+  useEffect(() => {
+    if (!isCloudReady || !currentUser || localEditVersion === 0) return;
+
+    setCloudSyncState('syncing');
+    const timer = setTimeout(async () => {
+      try {
+        await pushCurrentWorkspaceToCloud(currentUser.uid, docSetRef.current);
+      } catch {
+        setCloudSyncState('idle');
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [localEditVersion, isCloudReady, currentUser]);
 
   // Real-time financial & withholding tax calculation
   const financialSummary = useMemo(
@@ -245,12 +427,13 @@ export default function App() {
     [docSet.items, docSet.whtEnabled, docSet.whtRate]
   );
 
-  // Handlers for updating synced DocumentSet fields
+  // Handlers for updating synced DocumentSet fields (triggers auto-sync)
   const updateDocFields = (fields: Partial<DocumentSetRecord>) => {
     setDocSet((prev) => ({
       ...prev,
       ...fields,
     }));
+    markLocalWorkspaceEdited();
   };
 
   // Auto-run next sequential Quotation Number & companion numbers
@@ -359,19 +542,34 @@ export default function App() {
     showToast(`บันทึก "${customerRecord.name}" ลงฐานข้อมูลลูกค้าเรียบร้อยแล้ว`);
   };
 
-  // Save Customer (Local + Cloud Firestore if logged in & verified)
+  // Save Customer (Local + Cloud Firestore if logged in)
   const handleSaveCustomer = async (customer: CustomerRecord, _isExistingLocal: boolean) => {
+    const targetId = currentUser ? scopeCloudId(currentUser.uid, customer.id) : customer.id;
+    const normalizedCustomer: CustomerRecord = {
+      ...customer,
+      id: targetId,
+      ownerId: currentUser ? currentUser.uid : customer.ownerId,
+    };
+
     setCustomers((prev) => {
-      const exists = prev.some((c) => c.id === customer.id);
+      const exists = prev.some((c) => c.id === customer.id || c.id === targetId);
       if (exists) {
-        return prev.map((c) => (c.id === customer.id ? customer : c));
+        return prev.map((c) =>
+          c.id === customer.id || c.id === targetId ? normalizedCustomer : c
+        );
       }
-      return [...prev, customer];
+      return [...prev, normalizedCustomer];
     });
 
     if (currentUser && isCloudReady) {
-      const existsInCloud = cloudCustomerIds.has(sanitizeId(customer.id));
-      await saveCustomerToFirestore(currentUser.uid, customer, existsInCloud);
+      const existsInCloud = cloudCustomerIdsRef.current.has(targetId);
+      const savedId = await saveCustomerToFirestore(
+        currentUser.uid,
+        normalizedCustomer,
+        existsInCloud
+      );
+      cloudCustomerIdsRef.current.add(savedId);
+      setCloudCustomerIds(new Set(cloudCustomerIdsRef.current));
     }
   };
 
@@ -380,8 +578,13 @@ export default function App() {
     if (docSet.customerId === customerId) {
       updateDocFields({ customerId: '' });
     }
-    if (currentUser && isCloudReady && cloudCustomerIds.has(sanitizeId(customerId))) {
-      await deleteCustomerFromFirestore(customerId);
+    if (currentUser && isCloudReady) {
+      const scopedId = scopeCloudId(currentUser.uid, customerId);
+      if (cloudCustomerIdsRef.current.has(scopedId)) {
+        await deleteCustomerFromFirestore(currentUser.uid, scopedId);
+        cloudCustomerIdsRef.current.delete(scopedId);
+        setCloudCustomerIds(new Set(cloudCustomerIdsRef.current));
+      }
     }
   };
 
@@ -389,12 +592,18 @@ export default function App() {
   const handleSaveCurrentDocumentSet = async () => {
     setIsSavingDoc(true);
     try {
-      const { items, ...meta } = docSet;
+      const targetId = currentUser ? scopeCloudId(currentUser.uid, docSet.id) : docSet.id;
+      const updatedDocSet: DocumentSetRecord = {
+        ...docSet,
+        id: targetId,
+        ownerId: currentUser ? currentUser.uid : docSet.ownerId,
+      };
+      const { items, ...meta } = updatedDocSet;
 
       setSavedDocSets((prev) => {
-        const exists = prev.some((d) => d.id === docSet.id);
+        const exists = prev.some((d) => d.id === docSet.id || d.id === targetId);
         const nextList = exists
-          ? prev.map((d) => (d.id === docSet.id ? meta : d))
+          ? prev.map((d) => (d.id === docSet.id || d.id === targetId ? meta : d))
           : [meta, ...prev];
         try {
           localStorage.setItem(LOCAL_STORAGE_ARCHIVE_KEY, JSON.stringify(nextList));
@@ -406,20 +615,12 @@ export default function App() {
 
       setLocalItemsMap((prev) => ({
         ...prev,
-        [docSet.id]: items,
+        [targetId]: items,
       }));
 
       if (currentUser && isCloudReady) {
-        const existsInCloud = cloudDocSetIds.has(sanitizeId(docSet.id));
-        await saveDocumentSetToFirestore(
-          currentUser.uid,
-          docSet,
-          existsInCloud,
-          cloudCustomerIds
-        );
-        showToast('บันทึกชุดเอกสารทั้ง 4 หน้าขึ้น Cloud Firestore เรียบร้อยแล้ว');
-      } else if (currentUser && !currentUser.emailVerified) {
-        showToast('บันทึกชุดเอกสารในเครื่องแล้ว (กรุณายืนยันลิงก์ในอีเมลเพื่อซิงค์ขึ้น Cloud Firestore)');
+        await pushCurrentWorkspaceToCloud(currentUser.uid, updatedDocSet);
+        showToast('บันทึกและซิงค์ชุดเอกสารทั้ง 4 หน้าขึ้น Cloud Firestore เรียบร้อยแล้ว');
       } else {
         showToast('บันทึกชุดเอกสารทั้ง 4 หน้าลงในคลังเรียบร้อยแล้ว');
       }
@@ -459,6 +660,7 @@ export default function App() {
         foundMeta.sellerSignatureDataUrl || docSet.sellerSignatureDataUrl || savedSignature,
       items: loadedItems.length > 0 ? loadedItems : DEFAULT_DOCUMENT_SET.items,
     });
+    markLocalWorkspaceEdited();
     setActiveNavTab('editor');
     showToast(`โหลดชุดเอกสาร "${foundMeta.projectTitle}" เรียบร้อยแล้ว`);
   };
@@ -515,10 +717,11 @@ export default function App() {
       // Ignore
     }
 
+    const rawNewId = sanitizeId(`docset_${Date.now()}`);
     const freshSet: DocumentSetRecord = {
       ...DEFAULT_DOCUMENT_SET,
       ...defaultSeller,
-      id: sanitizeId(`docset_${Date.now()}`),
+      id: currentUser ? scopeCloudId(currentUser.uid, rawNewId) : rawNewId,
       ownerId: currentUser ? currentUser.uid : 'local',
       projectTitle: 'โครงการบริการใหม่ (ระบุชื่องาน)',
       referenceNo: `PO-${ym}-${seqStr}`,
@@ -546,6 +749,7 @@ export default function App() {
     };
 
     setDocSet(freshSet);
+    markLocalWorkspaceEdited();
     setActiveNavTab('editor');
     showToast(`สร้างชุดเอกสารใหม่พร้อมรันเลข ${generated.quotationNo} อัตโนมัติแล้ว`);
   };
@@ -565,9 +769,10 @@ export default function App() {
       // Ignore
     }
 
+    const rawNewId = sanitizeId(`docset_${Date.now()}`);
     const clonedSet: DocumentSetRecord = {
       ...docSet,
-      id: sanitizeId(`docset_${Date.now()}`),
+      id: currentUser ? scopeCloudId(currentUser.uid, rawNewId) : rawNewId,
       projectTitle: `${docSet.projectTitle} (สำเนา)`,
       quotationNo: generated.quotationNo,
       billingNoteNo: generated.billingNoteNo,
@@ -579,6 +784,7 @@ export default function App() {
       })),
     };
     setDocSet(clonedSet);
+    markLocalWorkspaceEdited();
     setActiveNavTab('editor');
     showToast(`คัดลอกชุดเอกสารพร้อมรันเลข ${generated.quotationNo} เรียบร้อยแล้ว`);
   };
@@ -594,8 +800,13 @@ export default function App() {
       return next;
     });
 
-    if (currentUser && isCloudReady && cloudDocSetIds.has(sanitizeId(docSetId))) {
-      await deleteDocumentSetFromFirestore(currentUser.uid, docSetId);
+    if (currentUser && isCloudReady) {
+      const scopedId = scopeCloudId(currentUser.uid, docSetId);
+      if (cloudDocSetIdsRef.current.has(scopedId)) {
+        await deleteDocumentSetFromFirestore(currentUser.uid, scopedId);
+        cloudDocSetIdsRef.current.delete(scopedId);
+        setCloudDocSetIds(new Set(cloudDocSetIdsRef.current));
+      }
     }
     showToast('ลบชุดเอกสารออกจากคลังแล้ว');
   };
@@ -875,16 +1086,32 @@ export default function App() {
               <div className="inline-flex items-center gap-2 pl-2 border-l border-slate-300 text-xs text-slate-600">
                 <span className="inline-flex items-center gap-1.5 truncate max-w-[170px]" title={currentUser.email || ''}>
                   <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span className="truncate">{currentUser.email}</span>
+                  <span className="truncate font-medium text-slate-800">{currentUser.email}</span>
                 </span>
-                {currentUser.emailVerified ? (
-                  <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 hidden sm:inline" title="ยืนยันอีเมลแล้ว">
-                    ยืนยันแล้ว
+                {cloudSyncState === 'syncing' ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 whitespace-nowrap">
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                    <span>กำลังซิงค์คลาวด์...</span>
                   </span>
                 ) : (
-                  <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 hidden sm:inline" title="ยังไม่ได้ยืนยันอีเมล">
-                    รอการยืนยัน
-                  </span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!currentUser) return;
+                      if (savedDocSets.length > 0 && cloudDocSetIdsRef.current.size > 0) {
+                        await applyCloudDocSetToWorkspace(currentUser.uid, savedDocSets[0]);
+                        showToast('ดึงข้อมูลล่าสุดจาก Cloud Firestore เรียบร้อยแล้ว');
+                      } else {
+                        await pushCurrentWorkspaceToCloud(currentUser.uid, docSetRef.current);
+                        showToast('ซิงค์ข้อมูลปัจจุบันขึ้น Cloud Firestore เรียบร้อยแล้ว');
+                      }
+                    }}
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 whitespace-nowrap cursor-pointer transition-colors"
+                    title="คลิกเพื่อดึงข้อมูลล่าสุดจากคลาวด์ทันที"
+                  >
+                    <Check className="w-2.5 h-2.5" />
+                    <span>ซิงค์คลาวด์อัตโนมัติ</span>
+                  </button>
                 )}
                 <button
                   type="button"
@@ -908,34 +1135,6 @@ export default function App() {
           </div>
         </div>
       </div>
-
-      {/* Unverified Email Alert Banner */}
-      {currentUser && !currentUser.emailVerified && (
-        <div className="no-print bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>
-              บัญชี <strong>{currentUser.email}</strong> ยังไม่ได้คลิกลิงก์ยืนยันในอีเมล กรุณายืนยันตัวตนเพื่อเริ่มซิงค์ข้อมูลบน Cloud Firestore ตามมาตรการความปลอดภัย
-            </span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={handleResendVerificationEmail}
-              className="px-2.5 py-1 text-xs font-semibold bg-white border border-amber-300 rounded hover:bg-amber-100 transition-colors cursor-pointer"
-            >
-              ส่งอีเมลยืนยันอีกครั้ง
-            </button>
-            <button
-              type="button"
-              onClick={handleReloadUserVerification}
-              className="px-2.5 py-1 text-xs font-semibold bg-amber-700 text-white rounded hover:bg-amber-800 transition-colors cursor-pointer"
-            >
-              ฉันกดยืนยันแล้ว (รีเฟรชสถานะ)
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Toast Notification Banner */}
       {toastMessage && (
