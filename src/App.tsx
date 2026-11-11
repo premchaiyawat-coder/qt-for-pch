@@ -204,9 +204,11 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // Firestore real-time listeners when authenticated
+  const isCloudReady = Boolean(authReady && currentUser && currentUser.emailVerified);
+
+  // Firestore real-time listeners when authenticated & verified
   useEffect(() => {
-    if (!authReady || !currentUser) {
+    if (!isCloudReady || !currentUser) {
       setCloudCustomerIds(new Set());
       setCloudDocSetIds(new Set());
       return;
@@ -230,7 +232,7 @@ export default function App() {
       unsubCustomers();
       unsubDocSets();
     };
-  }, [authReady, currentUser]);
+  }, [isCloudReady, currentUser]);
 
   // Real-time financial & withholding tax calculation
   const financialSummary = useMemo(
@@ -357,7 +359,7 @@ export default function App() {
     showToast(`บันทึก "${customerRecord.name}" ลงฐานข้อมูลลูกค้าเรียบร้อยแล้ว`);
   };
 
-  // Save Customer (Local + Cloud Firestore if logged in)
+  // Save Customer (Local + Cloud Firestore if logged in & verified)
   const handleSaveCustomer = async (customer: CustomerRecord, _isExistingLocal: boolean) => {
     setCustomers((prev) => {
       const exists = prev.some((c) => c.id === customer.id);
@@ -367,7 +369,7 @@ export default function App() {
       return [...prev, customer];
     });
 
-    if (currentUser) {
+    if (currentUser && isCloudReady) {
       const existsInCloud = cloudCustomerIds.has(sanitizeId(customer.id));
       await saveCustomerToFirestore(currentUser.uid, customer, existsInCloud);
     }
@@ -378,7 +380,7 @@ export default function App() {
     if (docSet.customerId === customerId) {
       updateDocFields({ customerId: '' });
     }
-    if (currentUser && cloudCustomerIds.has(sanitizeId(customerId))) {
+    if (currentUser && isCloudReady && cloudCustomerIds.has(sanitizeId(customerId))) {
       await deleteCustomerFromFirestore(customerId);
     }
   };
@@ -407,7 +409,7 @@ export default function App() {
         [docSet.id]: items,
       }));
 
-      if (currentUser) {
+      if (currentUser && isCloudReady) {
         const existsInCloud = cloudDocSetIds.has(sanitizeId(docSet.id));
         await saveDocumentSetToFirestore(
           currentUser.uid,
@@ -416,6 +418,8 @@ export default function App() {
           cloudCustomerIds
         );
         showToast('บันทึกชุดเอกสารทั้ง 4 หน้าขึ้น Cloud Firestore เรียบร้อยแล้ว');
+      } else if (currentUser && !currentUser.emailVerified) {
+        showToast('บันทึกชุดเอกสารในเครื่องแล้ว (กรุณายืนยันลิงก์ในอีเมลเพื่อซิงค์ขึ้น Cloud Firestore)');
       } else {
         showToast('บันทึกชุดเอกสารทั้ง 4 หน้าลงในคลังเรียบร้อยแล้ว');
       }
@@ -434,7 +438,7 @@ export default function App() {
     if (!foundMeta) return;
 
     let loadedItems = localItemsMap[docSetId] || [];
-    if (currentUser) {
+    if (currentUser && isCloudReady) {
       try {
         loadedItems = await fetchDocumentItems(currentUser.uid, docSetId);
       } catch {
@@ -590,7 +594,7 @@ export default function App() {
       return next;
     });
 
-    if (currentUser && cloudDocSetIds.has(sanitizeId(docSetId))) {
+    if (currentUser && isCloudReady && cloudDocSetIds.has(sanitizeId(docSetId))) {
       await deleteDocumentSetFromFirestore(currentUser.uid, docSetId);
     }
     showToast('ลบชุดเอกสารออกจากคลังแล้ว');
@@ -661,6 +665,7 @@ export default function App() {
     if (!auth.currentUser) return;
     try {
       await auth.currentUser.reload();
+      await auth.currentUser.getIdToken(true);
       setCurrentUser(auth.currentUser ? ({ ...auth.currentUser } as User) : null);
       if (auth.currentUser.emailVerified) {
         showToast('ยืนยันอีเมลสำเร็จแล้ว ระบบพร้อมซิงค์ข้อมูลบน Cloud Firestore');
