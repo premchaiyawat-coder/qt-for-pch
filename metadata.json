@@ -1,0 +1,6 @@
+{
+  "name": "SyncDoc Billing Suite",
+  "description": "ระบบสร้างใบเสนอราคา ใบวางบิล ใบแจ้งหนี้ และใบเสร็จรับเงินแบบซิงค์ข้อมูลอัตโนมัติ พร้อมฐานข้อมูลลูกค้า คำนวณภาษีหัก ณ ที่จ่าย และดาวน์โหลด PDF รายหน้า",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,224 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    // Validation Blueprint: Customer
+    function isValidCustomer(data) {
+      return data.keys().hasAll([
+        'ownerId', 'code', 'name', 'taxId', 'branch', 'address',
+        'contactPerson', 'phone', 'email', 'notes', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'code', 'name', 'taxId', 'branch', 'address',
+        'contactPerson', 'phone', 'email', 'notes', 'createdAt', 'updatedAt'
+      ]) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+      data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') && data.ownerId == request.auth.uid &&
+      data.code is string && data.code.size() >= 1 && data.code.size() <= 50 &&
+      data.name is string && data.name.size() >= 1 && data.name.size() <= 200 &&
+      data.taxId is string && data.taxId.size() <= 30 &&
+      data.branch is string && data.branch.size() <= 80 &&
+      data.address is string && data.address.size() <= 500 &&
+      data.contactPerson is string && data.contactPerson.size() <= 150 &&
+      data.phone is string && data.phone.size() <= 50 &&
+      data.email is string && data.email.size() <= 150 &&
+      data.notes is string && data.notes.size() <= 500 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: DocumentSet
+    function isValidDocumentSet(data) {
+      return data.keys().hasAll([
+        'ownerId', 'projectTitle', 'referenceNo', 'quotationNo', 'billingNoteNo',
+        'invoiceNo', 'receiptNo', 'issueDate', 'dueDate', 'customerId',
+        'customerName', 'customerTaxId', 'customerBranch', 'customerAddress',
+        'customerContact', 'customerPhone', 'customerEmail', 'sellerName',
+        'sellerTaxId', 'sellerBranch', 'sellerAddress', 'sellerPhone',
+        'sellerEmail', 'sellerBankInfo', 'sellerSignerName', 'discountAmount',
+        'vatMode', 'vatRate', 'whtEnabled', 'whtRate', 'whtType',
+        'paymentMethod', 'paymentDate', 'notes', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'projectTitle', 'referenceNo', 'quotationNo', 'billingNoteNo',
+        'invoiceNo', 'receiptNo', 'issueDate', 'dueDate', 'customerId',
+        'customerName', 'customerTaxId', 'customerBranch', 'customerAddress',
+        'customerContact', 'customerPhone', 'customerEmail', 'sellerName',
+        'sellerTaxId', 'sellerBranch', 'sellerAddress', 'sellerPhone',
+        'sellerEmail', 'sellerBankInfo', 'sellerSignerName', 'discountAmount',
+        'vatMode', 'vatRate', 'whtEnabled', 'whtRate', 'whtType',
+        'paymentMethod', 'paymentDate', 'notes', 'createdAt', 'updatedAt'
+      ]) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+      data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') && data.ownerId == request.auth.uid &&
+      data.projectTitle is string && data.projectTitle.size() >= 1 && data.projectTitle.size() <= 250 &&
+      data.referenceNo is string && data.referenceNo.size() <= 80 &&
+      data.quotationNo is string && data.quotationNo.size() >= 1 && data.quotationNo.size() <= 50 &&
+      data.billingNoteNo is string && data.billingNoteNo.size() >= 1 && data.billingNoteNo.size() <= 50 &&
+      data.invoiceNo is string && data.invoiceNo.size() >= 1 && data.invoiceNo.size() <= 50 &&
+      data.receiptNo is string && data.receiptNo.size() >= 1 && data.receiptNo.size() <= 50 &&
+      data.issueDate is string && data.issueDate.size() >= 1 && data.issueDate.size() <= 30 &&
+      data.dueDate is string && data.dueDate.size() <= 30 &&
+      data.customerId is string && data.customerId.size() <= 128 &&
+      data.customerName is string && data.customerName.size() >= 1 && data.customerName.size() <= 200 &&
+      data.customerTaxId is string && data.customerTaxId.size() <= 30 &&
+      data.customerBranch is string && data.customerBranch.size() <= 80 &&
+      data.customerAddress is string && data.customerAddress.size() <= 500 &&
+      data.customerContact is string && data.customerContact.size() <= 150 &&
+      data.customerPhone is string && data.customerPhone.size() <= 50 &&
+      data.customerEmail is string && data.customerEmail.size() <= 150 &&
+      data.sellerName is string && data.sellerName.size() >= 1 && data.sellerName.size() <= 200 &&
+      data.sellerTaxId is string && data.sellerTaxId.size() <= 30 &&
+      data.sellerBranch is string && data.sellerBranch.size() <= 80 &&
+      data.sellerAddress is string && data.sellerAddress.size() <= 500 &&
+      data.sellerPhone is string && data.sellerPhone.size() <= 50 &&
+      data.sellerEmail is string && data.sellerEmail.size() <= 150 &&
+      data.sellerBankInfo is string && data.sellerBankInfo.size() <= 400 &&
+      data.sellerSignerName is string && data.sellerSignerName.size() <= 150 &&
+      data.discountAmount is number && data.discountAmount >= 0 && data.discountAmount <= 1000000000 &&
+      data.vatMode is string && data.vatMode.size() <= 20 &&
+      (data.vatMode == 'exclude' || data.vatMode == 'include' || data.vatMode == 'none') &&
+      data.vatRate is number && data.vatRate >= 0 && data.vatRate <= 100 &&
+      data.whtEnabled is bool &&
+      data.whtRate is number && data.whtRate >= 0 && data.whtRate <= 100 &&
+      data.whtType is string && data.whtType.size() <= 150 &&
+      data.paymentMethod is string && data.paymentMethod.size() <= 100 &&
+      data.paymentDate is string && data.paymentDate.size() <= 30 &&
+      data.notes is string && data.notes.size() <= 1000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: DocumentItem
+    function isValidDocumentItem(data) {
+      return data.keys().hasAll([
+        'ownerId', 'docSetId', 'sortOrder', 'description', 'subDescription',
+        'quantity', 'unit', 'unitPrice', 'createdAt', 'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'ownerId', 'docSetId', 'sortOrder', 'description', 'subDescription',
+        'quantity', 'unit', 'unitPrice', 'createdAt', 'updatedAt'
+      ]) &&
+      data.ownerId is string && data.ownerId.size() >= 1 && data.ownerId.size() <= 128 &&
+      data.ownerId.matches('^[a-zA-Z0-9_\\-]+$') && data.ownerId == request.auth.uid &&
+      data.docSetId is string && data.docSetId.size() >= 1 && data.docSetId.size() <= 128 &&
+      data.docSetId.matches('^[a-zA-Z0-9_\\-]+$') &&
+      data.sortOrder is number && data.sortOrder >= 0 && data.sortOrder <= 10000 &&
+      data.description is string && data.description.size() >= 1 && data.description.size() <= 500 &&
+      data.subDescription is string && data.subDescription.size() <= 500 &&
+      data.quantity is number && data.quantity >= 0 && data.quantity <= 100000000 &&
+      data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 50 &&
+      data.unitPrice is number && data.unitPrice >= 0 && data.unitPrice <= 1000000000 &&
+      data.createdAt is timestamp &&
+      data.updatedAt is timestamp;
+    }
+
+    // Collection: /customers/{customerId}
+    match /customers/{customerId} {
+      allow get: if isSignedIn() && isValidId(customerId) && existing().ownerId == request.auth.uid;
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(customerId) && isValidCustomer(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isSignedIn() && isValidId(customerId) && isValidCustomer(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'code', 'name', 'taxId', 'branch', 'address',
+          'contactPerson', 'phone', 'email', 'notes', 'updatedAt'
+        ]);
+      allow delete: if isSignedIn() && isValidId(customerId) && existing().ownerId == request.auth.uid;
+    }
+
+    // Collection: /documentSets/{docSetId}
+    match /documentSets/{docSetId} {
+      allow get: if isSignedIn() && isValidId(docSetId) && existing().ownerId == request.auth.uid;
+      allow list: if isSignedIn() && existing().ownerId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(docSetId) && isValidDocumentSet(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (incoming().customerId == '' || (
+          exists(/databases/$(database)/documents/customers/$(incoming().customerId)) &&
+          get(/databases/$(database)/documents/customers/$(incoming().customerId)).data.ownerId == request.auth.uid
+        ));
+      allow update: if isSignedIn() && isValidId(docSetId) && isValidDocumentSet(incoming()) &&
+        existing().ownerId == request.auth.uid &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'projectTitle', 'referenceNo', 'quotationNo', 'billingNoteNo',
+          'invoiceNo', 'receiptNo', 'issueDate', 'dueDate', 'customerId',
+          'customerName', 'customerTaxId', 'customerBranch', 'customerAddress',
+          'customerContact', 'customerPhone', 'customerEmail', 'sellerName',
+          'sellerTaxId', 'sellerBranch', 'sellerAddress', 'sellerPhone',
+          'sellerEmail', 'sellerBankInfo', 'sellerSignerName', 'discountAmount',
+          'vatMode', 'vatRate', 'whtEnabled', 'whtRate', 'whtType',
+          'paymentMethod', 'paymentDate', 'notes', 'updatedAt'
+        ]) &&
+        (incoming().customerId == '' || (
+          exists(/databases/$(database)/documents/customers/$(incoming().customerId)) &&
+          get(/databases/$(database)/documents/customers/$(incoming().customerId)).data.ownerId == request.auth.uid
+        ));
+      allow delete: if isSignedIn() && isValidId(docSetId) && existing().ownerId == request.auth.uid;
+
+      // Subcollection: /documentSets/{docSetId}/items/{itemId}
+      match /items/{itemId} {
+        allow get: if isSignedIn() && isValidId(docSetId) && isValidId(itemId) &&
+          existing().ownerId == request.auth.uid &&
+          exists(/databases/$(database)/documents/documentSets/$(docSetId)) &&
+          get(/databases/$(database)/documents/documentSets/$(docSetId)).data.ownerId == request.auth.uid;
+        allow list: if isSignedIn() &&
+          existing().ownerId == request.auth.uid &&
+          existing().docSetId == docSetId;
+        allow create: if isSignedIn() && isValidId(docSetId) && isValidId(itemId) &&
+          isValidDocumentItem(incoming()) &&
+          incoming().docSetId == docSetId &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          exists(/databases/$(database)/documents/documentSets/$(docSetId)) &&
+          get(/databases/$(database)/documents/documentSets/$(docSetId)).data.ownerId == request.auth.uid;
+        allow update: if isSignedIn() && isValidId(docSetId) && isValidId(itemId) &&
+          isValidDocumentItem(incoming()) &&
+          existing().ownerId == request.auth.uid &&
+          incoming().ownerId == existing().ownerId &&
+          incoming().docSetId == existing().docSetId &&
+          incoming().docSetId == docSetId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'sortOrder', 'description', 'subDescription', 'quantity', 'unit', 'unitPrice', 'updatedAt'
+          ]) &&
+          exists(/databases/$(database)/documents/documentSets/$(docSetId)) &&
+          get(/databases/$(database)/documents/documentSets/$(docSetId)).data.ownerId == request.auth.uid;
+        allow delete: if isSignedIn() && isValidId(docSetId) && isValidId(itemId) &&
+          existing().ownerId == request.auth.uid &&
+          exists(/databases/$(database)/documents/documentSets/$(docSetId)) &&
+          get(/databases/$(database)/documents/documentSets/$(docSetId)).data.ownerId == request.auth.uid;
+      }
+    }
+  }
+}

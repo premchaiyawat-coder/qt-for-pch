@@ -1,0 +1,437 @@
+{
+  "entities": {
+    "Customer": {
+      "title": "Customer",
+      "description": "Customer record in the billing database containing tax ID, branch, address, and contact details.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the authenticated owner."
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Customer reference code (e.g., CUS-001)."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Company or customer full name."
+        },
+        "taxId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 30,
+          "description": "13-digit tax identification number."
+        },
+        "branch": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80,
+          "description": "Head office or branch name/number."
+        },
+        "address": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Registered billing address."
+        },
+        "contactPerson": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150,
+          "description": "Primary contact person name."
+        },
+        "phone": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 50,
+          "description": "Contact phone number."
+        },
+        "email": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150,
+          "description": "Contact email address."
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Internal customer notes or credit terms."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated."
+        }
+      },
+      "required": [
+        "ownerId",
+        "code",
+        "name",
+        "taxId",
+        "branch",
+        "address",
+        "contactPerson",
+        "phone",
+        "email",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DocumentSet": {
+      "title": "DocumentSet",
+      "description": "Synchronized 4-page billing document set (Quotation, Billing Note, Invoice, Receipt) with VAT and Withholding Tax configuration.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the authenticated owner."
+        },
+        "projectTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 250,
+          "description": "Project or job title synced across all 4 documents."
+        },
+        "referenceNo": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80,
+          "description": "PO number or external reference."
+        },
+        "quotationNo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Quotation document number."
+        },
+        "billingNoteNo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Billing note document number."
+        },
+        "invoiceNo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Invoice document number."
+        },
+        "receiptNo": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Receipt document number."
+        },
+        "issueDate": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 30,
+          "description": "Document issue date (YYYY-MM-DD)."
+        },
+        "dueDate": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 30,
+          "description": "Payment due date or quotation validity date."
+        },
+        "customerId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 128,
+          "description": "Optional linked customer ID."
+        },
+        "customerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Customer name on the document."
+        },
+        "customerTaxId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 30,
+          "description": "Customer 13-digit tax ID."
+        },
+        "customerBranch": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80,
+          "description": "Customer branch or head office."
+        },
+        "customerAddress": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Customer billing address."
+        },
+        "customerContact": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150,
+          "description": "Customer contact person."
+        },
+        "customerPhone": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 50,
+          "description": "Customer phone number."
+        },
+        "customerEmail": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150,
+          "description": "Customer email address."
+        },
+        "sellerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Seller company or freelancer name."
+        },
+        "sellerTaxId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 30,
+          "description": "Seller tax ID."
+        },
+        "sellerBranch": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 80,
+          "description": "Seller branch."
+        },
+        "sellerAddress": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Seller address."
+        },
+        "sellerPhone": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 50,
+          "description": "Seller phone."
+        },
+        "sellerEmail": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150,
+          "description": "Seller email."
+        },
+        "sellerBankInfo": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 400,
+          "description": "Seller bank account details for payment."
+        },
+        "sellerSignerName": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150,
+          "description": "Authorized issuer / signer name."
+        },
+        "discountAmount": {
+          "type": "number",
+          "description": "Total discount amount before tax."
+        },
+        "vatMode": {
+          "type": "string",
+          "enum": ["exclude", "include", "none"],
+          "maxLength": 20,
+          "description": "VAT calculation mode: exclude (add 7%), include (extract 7%), or none."
+        },
+        "vatRate": {
+          "type": "number",
+          "description": "VAT percentage rate (default 7)."
+        },
+        "whtEnabled": {
+          "type": "boolean",
+          "description": "Whether withholding tax deduction is active."
+        },
+        "whtRate": {
+          "type": "number",
+          "description": "Custom or preset withholding tax percentage (0 to 100)."
+        },
+        "whtType": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 150,
+          "description": "Description of withholding tax category (e.g., ค่าบริการ 3%)."
+        },
+        "paymentMethod": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100,
+          "description": "Payment channel recorded on the Receipt page."
+        },
+        "paymentDate": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 30,
+          "description": "Date payment was received for the Receipt page."
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 1000,
+          "description": "Terms, conditions, and remarks synced across pages."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "ownerId",
+        "projectTitle",
+        "referenceNo",
+        "quotationNo",
+        "billingNoteNo",
+        "invoiceNo",
+        "receiptNo",
+        "issueDate",
+        "dueDate",
+        "customerId",
+        "customerName",
+        "customerTaxId",
+        "customerBranch",
+        "customerAddress",
+        "customerContact",
+        "customerPhone",
+        "customerEmail",
+        "sellerName",
+        "sellerTaxId",
+        "sellerBranch",
+        "sellerAddress",
+        "sellerPhone",
+        "sellerEmail",
+        "sellerBankInfo",
+        "sellerSignerName",
+        "discountAmount",
+        "vatMode",
+        "vatRate",
+        "whtEnabled",
+        "whtRate",
+        "whtType",
+        "paymentMethod",
+        "paymentDate",
+        "notes",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "DocumentItem": {
+      "title": "DocumentItem",
+      "description": "Individual work item or line item belonging to a DocumentSet.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the authenticated owner."
+        },
+        "docSetId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Parent DocumentSet ID."
+        },
+        "sortOrder": {
+          "type": "number",
+          "description": "Line item display sequence."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Primary work or service description."
+        },
+        "subDescription": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 500,
+          "description": "Secondary scope details or deliverable notes."
+        },
+        "quantity": {
+          "type": "number",
+          "description": "Quantity of units."
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Unit label (e.g., งาน, ชิ้น, เดือน)."
+        },
+        "unitPrice": {
+          "type": "number",
+          "description": "Price per unit before tax."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "ownerId",
+        "docSetId",
+        "sortOrder",
+        "description",
+        "subDescription",
+        "quantity",
+        "unit",
+        "unitPrice",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/customers/{customerId}": {
+      "schema": {
+        "$ref": "#/entities/Customer"
+      },
+      "description": "Private customer database records scoped strictly to each authenticated user."
+    },
+    "/documentSets/{docSetId}": {
+      "schema": {
+        "$ref": "#/entities/DocumentSet"
+      },
+      "description": "Synchronized 4-page billing document sets scoped strictly to each authenticated user."
+    },
+    "/documentSets/{docSetId}/items/{itemId}": {
+      "schema": {
+        "$ref": "#/entities/DocumentItem"
+      },
+      "description": "Line items belonging to a specific DocumentSet."
+    }
+  }
+}
