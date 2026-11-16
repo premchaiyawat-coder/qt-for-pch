@@ -27,11 +27,13 @@ import {
   Upload,
   Image as ImageIcon,
   Eye,
+  FolderOpen,
 } from 'lucide-react';
 import { auth, googleProvider } from './firebase';
 import { fileToResizedJpegDataUrl } from './utils/imageHelper';
 import {
   addDaysToDate,
+  AssetCategory,
   calculateDaysBetween,
   calculateFinancialSummary,
   CustomerRecord,
@@ -45,16 +47,20 @@ import {
   PRESET_WHT_OPTIONS,
   sanitizeId,
   syncCompanionDocNumbersFromQuotation,
+  UserAssetRecord,
   WorkLineItem,
 } from './types/billing';
 import {
   deleteCustomerFromFirestore,
   deleteDocumentSetFromFirestore,
+  deleteUserAssetFromFirestore,
   fetchDocumentItems,
   getTimestampMillis,
   saveCustomerToFirestore,
   saveDocumentSetToFirestore,
+  saveUserAssetToFirestore,
   scopeCloudId,
+  subscribeUserAssets,
   subscribeUserCustomers,
   subscribeUserDocumentSets,
 } from './services/firestoreService';
@@ -65,6 +71,11 @@ import { SellerProfileView } from './components/SellerProfileView';
 import { DateInputDMY } from './components/DateInputDMY';
 import { exportSelectedPagesToPdf } from './utils/pdfExport';
 import { AuthModal } from './components/AuthModal';
+import {
+  ASSET_CATEGORY_META,
+  ImageLibraryModal,
+  InlineAssetQuickPicker,
+} from './components/ImageLibraryModal';
 
 type ActiveWorkspaceTab = 'editor' | 'customers' | 'archive' | 'seller';
 type PreviewLayoutMode = 'single' | 'all4';
@@ -72,6 +83,7 @@ type PreviewLayoutMode = 'single' | 'all4';
 const LOCAL_STORAGE_DOC_KEY = 'syncdoc_active_docset_v1';
 const LOCAL_STORAGE_CUSTOMERS_KEY = 'syncdoc_local_customers_v1';
 const LOCAL_STORAGE_ARCHIVE_KEY = 'syncdoc_local_archive_v1';
+const LOCAL_STORAGE_ASSETS_KEY = 'syncdoc_image_library_v1';
 const LOCAL_STORAGE_SEQ_KEY = 'syncdoc_running_seq_v1';
 const LOCAL_STORAGE_MODIFIED_KEY = 'syncdoc_local_modified_at_v1';
 
@@ -182,6 +194,70 @@ export default function App() {
     [DEFAULT_DOCUMENT_SET.id]: DEFAULT_DOCUMENT_SET.items,
   }));
 
+  // Image Library (Uploaded Assets) state
+  const [userAssets, setUserAssets] = useState<UserAssetRecord[]>(() => {
+    let loaded: UserAssetRecord[] = [];
+    try {
+      const raw = localStorage.getItem(LOCAL_STORAGE_ASSETS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          loaded = parsed;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    // Backfill any already-uploaded images from localStorage / active docSet so nothing is lost
+    const seeds: { category: AssetCategory; name: string; dataUrl?: string }[] = [
+      {
+        category: 'logo',
+        name: 'โลโก้ที่บันทึกไว้',
+        dataUrl: docSet.sellerLogoDataUrl || localStorage.getItem('syncdoc_seller_logo_v1') || '',
+      },
+      {
+        category: 'signature',
+        name: 'ลายเซ็นที่บันทึกไว้',
+        dataUrl:
+          docSet.sellerSignatureDataUrl ||
+          localStorage.getItem('syncdoc_seller_signature_v1') ||
+          '',
+      },
+      {
+        category: 'idCard',
+        name: '1. สำเนาบัตรประชาชน',
+        dataUrl: docSet.idCardImageDataUrl || localStorage.getItem('syncdoc_id_card_v1') || '',
+      },
+      {
+        category: 'bankBook',
+        name: '2. สำเนาสมุดธนาคาร',
+        dataUrl:
+          docSet.bankBookImageDataUrl || localStorage.getItem('syncdoc_bank_book_v1') || '',
+      },
+    ];
+
+    for (const seed of seeds) {
+      if (
+        seed.dataUrl &&
+        !loaded.some((a) => a.category === seed.category && a.dataUrl === seed.dataUrl)
+      ) {
+        loaded.push({
+          id: `asset_${seed.category}_seed_${loaded.length + 1}`,
+          ownerId: 'local',
+          category: seed.category,
+          name: seed.name,
+          dataUrl: seed.dataUrl,
+          updatedAt: Date.now(),
+        });
+      }
+    }
+    return loaded;
+  });
+
+  const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
+  const [libraryModalCategory, setLibraryModalCategory] = useState<AssetCategory | 'all'>('all');
+
   // Status & PDF export progress
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [exportStatusText, setExportStatusText] = useState<string | null>(null);
@@ -196,10 +272,14 @@ export default function App() {
   docSetRef.current = docSet;
   const customersRef = useRef<CustomerRecord[]>(customers);
   customersRef.current = customers;
+  const userAssetsRef = useRef<UserAssetRecord[]>(userAssets);
+  userAssetsRef.current = userAssets;
   const cloudCustomerIdsRef = useRef<Set<string>>(new Set());
   const cloudDocSetIdsRef = useRef<Set<string>>(new Set());
+  const cloudAssetIdsRef = useRef<Set<string>>(new Set());
   const hasBootstrappedUidRef = useRef<string | null>(null);
   const hasBootstrappedCustomersUidRef = useRef<string | null>(null);
+  const hasBootstrappedAssetsUidRef = useRef<string | null>(null);
   const localDirtyRef = useRef(false);
   const lastLocalSaveTimeRef = useRef(0);
   const localModifiedAtRef = useRef<number>(
@@ -268,6 +348,52 @@ export default function App() {
     }
   }, [customers]);
 
+  // Persist local image library assets
+  useEffect(() => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_ASSETS_KEY, JSON.stringify(userAssets));
+    } catch {
+      // Ignore quota errors
+    }
+  }, [userAssets]);
+
+  // Automatically register any newly loaded images from docSet into userAssets if not already stored
+  useEffect(() => {
+    const candidates: { category: AssetCategory; name: string; dataUrl?: string }[] = [
+      { category: 'logo', name: 'โลโก้ผู้ขาย', dataUrl: docSet.sellerLogoDataUrl },
+      { category: 'signature', name: 'ลายเซ็นผู้มีอำนาจ', dataUrl: docSet.sellerSignatureDataUrl },
+      { category: 'idCard', name: '1. สำเนาบัตรประชาชน', dataUrl: docSet.idCardImageDataUrl },
+      { category: 'bankBook', name: '2. สำเนาสมุดธนาคาร', dataUrl: docSet.bankBookImageDataUrl },
+    ];
+
+    setUserAssets((prev) => {
+      let next = prev;
+      for (const item of candidates) {
+        if (
+          item.dataUrl &&
+          !next.some((a) => a.category === item.category && a.dataUrl === item.dataUrl)
+        ) {
+          const newAsset: UserAssetRecord = {
+            id: `asset_${item.category}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            ownerId: currentUser?.uid || 'local',
+            category: item.category,
+            name: item.name,
+            dataUrl: item.dataUrl,
+            updatedAt: Date.now(),
+          };
+          next = [newAsset, ...next];
+        }
+      }
+      return next;
+    });
+  }, [
+    docSet.sellerLogoDataUrl,
+    docSet.sellerSignatureDataUrl,
+    docSet.idCardImageDataUrl,
+    docSet.bankBookImageDataUrl,
+    currentUser?.uid,
+  ]);
+
   // Auth listener
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (user) => {
@@ -276,6 +402,7 @@ export default function App() {
       if (!user) {
         hasBootstrappedUidRef.current = null;
         hasBootstrappedCustomersUidRef.current = null;
+        hasBootstrappedAssetsUidRef.current = null;
         setCloudSyncState('idle');
       }
     });
@@ -431,9 +558,45 @@ export default function App() {
       }
     });
 
+    const unsubAssets = subscribeUserAssets(uid, async (cloudAssets) => {
+      const idSet = new Set(cloudAssets.map((a) => a.id));
+      cloudAssetIdsRef.current = idSet;
+
+      if (cloudAssets.length > 0) {
+        setUserAssets((prev) => {
+          const merged = [...cloudAssets];
+          for (const localAsset of prev) {
+            if (
+              localAsset.dataUrl &&
+              !merged.some(
+                (ca) =>
+                  ca.category === localAsset.category && ca.dataUrl === localAsset.dataUrl
+              )
+            ) {
+              merged.push(localAsset);
+            }
+          }
+          return merged;
+        });
+        hasBootstrappedAssetsUidRef.current = uid;
+      } else if (hasBootstrappedAssetsUidRef.current !== uid) {
+        hasBootstrappedAssetsUidRef.current = uid;
+        for (const localAsset of userAssetsRef.current) {
+          if (!localAsset.dataUrl) continue;
+          try {
+            const savedAssetId = await saveUserAssetToFirestore(uid, localAsset, false);
+            cloudAssetIdsRef.current.add(savedAssetId);
+          } catch {
+            // Ignore individual asset sync error
+          }
+        }
+      }
+    });
+
     return () => {
       unsubCustomers();
       unsubDocSets();
+      unsubAssets();
     };
   }, [isCloudReady, currentUser]);
 
@@ -471,6 +634,115 @@ export default function App() {
       ...fields,
     }));
     markLocalWorkspaceEdited();
+  };
+
+  // Image Library Handlers
+  const handleAddAssetToLibrary = async (
+    category: AssetCategory,
+    name: string,
+    dataUrl: string,
+    applyImmediately = false
+  ) => {
+    if (!dataUrl) return;
+    if (applyImmediately) {
+      handleSelectAssetForDoc(category, dataUrl, false);
+    }
+
+    const existing = userAssetsRef.current.find(
+      (a) => a.category === category && a.dataUrl === dataUrl
+    );
+    if (existing) {
+      if (applyImmediately) {
+        showToast(`อัปโหลดและใช้งาน ${ASSET_CATEGORY_META[category].label} เรียบร้อยแล้ว`);
+      }
+      return;
+    }
+
+    const rawId = `asset_${category}_${Date.now()}`;
+    const newAsset: UserAssetRecord = {
+      id: currentUser ? scopeCloudId(currentUser.uid, rawId) : rawId,
+      ownerId: currentUser?.uid || 'local',
+      category,
+      name: name || ASSET_CATEGORY_META[category].shortLabel,
+      dataUrl,
+      updatedAt: Date.now(),
+    };
+
+    setUserAssets((prev) => [newAsset, ...prev]);
+
+    if (isCloudReady && currentUser) {
+      try {
+        const savedId = await saveUserAssetToFirestore(currentUser.uid, newAsset, false);
+        cloudAssetIdsRef.current.add(savedId);
+      } catch {
+        // Ignore cloud asset save error
+      }
+    }
+
+    if (applyImmediately) {
+      showToast(`บันทึกภาพเข้าคลังและนำไปใช้งานเรียบร้อยแล้ว`);
+    }
+  };
+
+  const handleDeleteAssetFromLibrary = async (assetId: string) => {
+    setUserAssets((prev) => prev.filter((a) => a.id !== assetId));
+    if (isCloudReady && currentUser) {
+      try {
+        await deleteUserAssetFromFirestore(currentUser.uid, assetId);
+      } catch {
+        // Ignore
+      }
+    }
+    showToast('ลบรูปภาพออกจากคลังเรียบร้อยแล้ว');
+  };
+
+  const handleSelectAssetForDoc = (
+    category: AssetCategory,
+    dataUrl: string,
+    notify = true
+  ) => {
+    if (category === 'logo') {
+      updateDocFields({ sellerLogoDataUrl: dataUrl });
+      try {
+        localStorage.setItem('syncdoc_seller_logo_v1', dataUrl);
+      } catch {
+        // Ignore
+      }
+    } else if (category === 'signature') {
+      updateDocFields({ sellerSignatureDataUrl: dataUrl, showSellerSignature: true });
+      try {
+        localStorage.setItem('syncdoc_seller_signature_v1', dataUrl);
+      } catch {
+        // Ignore
+      }
+    } else if (category === 'idCard') {
+      updateDocFields({ idCardImageDataUrl: dataUrl });
+      try {
+        localStorage.setItem('syncdoc_id_card_v1', dataUrl);
+      } catch {
+        // Ignore
+      }
+      setPreviewLayout('single');
+      setActiveDocPage('attachmentIdCard');
+    } else if (category === 'bankBook') {
+      updateDocFields({ bankBookImageDataUrl: dataUrl });
+      try {
+        localStorage.setItem('syncdoc_bank_book_v1', dataUrl);
+      } catch {
+        // Ignore
+      }
+      setPreviewLayout('single');
+      setActiveDocPage('attachmentBankBook');
+    }
+
+    if (notify) {
+      showToast(`สลับใช้รูป ${ASSET_CATEGORY_META[category].label} จากคลังภาพเรียบร้อยแล้ว`);
+    }
+  };
+
+  const openImageLibraryModal = (category: AssetCategory | 'all' = 'all') => {
+    setLibraryModalCategory(category);
+    setIsLibraryModalOpen(true);
   };
 
   // Handle changing quotation validity days (Valid Until) with automatic addition
@@ -1144,6 +1416,16 @@ export default function App() {
 
             <button
               type="button"
+              onClick={() => openImageLibraryModal('all')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              title="เปิดคลังรูปภาพที่เคยอัปโหลดไว้เพื่อสลับโลโก้ ลายเซ็น หรือเอกสารเพิ่มเติม"
+            >
+              <FolderOpen className="w-3.5 h-3.5" />
+              <span>คลังรูปภาพ ({userAssets.length})</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => window.print()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               title="สั่งพิมพ์หรือบันทึกเป็น PDF ผ่านระบบพิมพ์ของเบราว์เซอร์"
@@ -1246,7 +1528,11 @@ export default function App() {
         {activeNavTab === 'seller' && (
           <SellerProfileView
             docSet={docSet}
+            userAssets={userAssets}
             onUpdateSellerFields={updateDocFields}
+            onAddAssetToLibrary={(cat, name, url) => handleAddAssetToLibrary(cat, name, url, false)}
+            onDeleteAssetFromLibrary={handleDeleteAssetFromLibrary}
+            onOpenLibraryModal={openImageLibraryModal}
             onReturnToEditor={() => setActiveNavTab('editor')}
           />
         )}
@@ -1255,26 +1541,34 @@ export default function App() {
           <div className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {/* LEFT COLUMN (5 cols): Synchronized Data & Tax Editor */}
             <div className="lg:col-span-5 space-y-5">
-              {/* Card 1: 01. ข้อมูลลูกค้า (Cleaned per Image 3) */}
+              {/* Card 1: 01. ข้อมูลลูกค้า */}
               <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <div>
                     <h2 className="text-sm font-bold text-slate-900">
                       01. ข้อมูลลูกค้า
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      ข้อมูลทุกช่องซิงค์ไปแสดงทั้ง 4 หน้าทันที
-                    </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleQuickSaveCurrentCustomerToDb}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                    title="บันทึกข้อมูลลูกค้าที่กรอกอยู่นี้เข้าสู่ฐานข้อมูลลูกค้า"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    <span>บันทึกลูกค้าเข้าฐานข้อมูล</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => openImageLibraryModal('logo')}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                      title="เลือกหรือสลับเปลี่ยนภาพโลโก้ร้านจากคลังรูปภาพ"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5 text-blue-700" />
+                      <span>คลังโลโก้</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleQuickSaveCurrentCustomerToDb}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                      title="บันทึกข้อมูลลูกค้าที่กรอกอยู่นี้เข้าสู่ฐานข้อมูลลูกค้า"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>บันทึกลูกค้า</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Quick Select Customer Dropdown */}
@@ -1315,7 +1609,6 @@ export default function App() {
                       type="text"
                       value={docSet.customerName}
                       onChange={(e) => updateDocFields({ customerName: e.target.value })}
-                      placeholder="บริษัท ลูกค้า จำกัด"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1328,7 +1621,6 @@ export default function App() {
                       type="text"
                       value={docSet.customerBranch}
                       onChange={(e) => updateDocFields({ customerBranch: e.target.value })}
-                      placeholder="สำนักงานใหญ่"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1341,7 +1633,6 @@ export default function App() {
                       type="text"
                       value={docSet.customerTaxId}
                       onChange={(e) => updateDocFields({ customerTaxId: e.target.value })}
-                      placeholder="01055XXXXXXXX"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md font-mono-tabular text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1354,7 +1645,6 @@ export default function App() {
                       type="text"
                       value={docSet.customerContact}
                       onChange={(e) => updateDocFields({ customerContact: e.target.value })}
-                      placeholder="ชื่อผู้ติดต่อ"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1367,7 +1657,6 @@ export default function App() {
                       type="text"
                       value={docSet.customerPhone}
                       onChange={(e) => updateDocFields({ customerPhone: e.target.value })}
-                      placeholder="08X-XXX-XXXX"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md font-mono-tabular text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1380,7 +1669,6 @@ export default function App() {
                       type="email"
                       value={docSet.customerEmail}
                       onChange={(e) => updateDocFields({ customerEmail: e.target.value })}
-                      placeholder="customer@company.co.th"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1393,7 +1681,6 @@ export default function App() {
                       rows={2}
                       value={docSet.customerAddress}
                       onChange={(e) => updateDocFields({ customerAddress: e.target.value })}
-                      placeholder="ที่อยู่สำหรับออกเอกสาร"
                       className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1406,7 +1693,6 @@ export default function App() {
                       type="text"
                       value={docSet.projectTitle}
                       onChange={(e) => updateDocFields({ projectTitle: e.target.value })}
-                      placeholder="ระบุชื่องานหรือโปรเจกต์"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md text-xs font-medium focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1419,7 +1705,6 @@ export default function App() {
                       type="text"
                       value={docSet.referenceNo}
                       onChange={(e) => updateDocFields({ referenceNo: e.target.value })}
-                      placeholder="PO-2026-XXXX"
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-md font-mono-tabular text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-600"
                     />
                   </div>
@@ -1427,7 +1712,7 @@ export default function App() {
                   {/* Auto-running Document Numbers Header */}
                   <div className="sm:col-span-12 pt-2 border-t border-slate-100 flex items-center justify-between">
                     <span className="font-semibold text-slate-700">
-                      เลขที่เอกสารทั้ง 4 หน้า (รันเลขใบเสนอราคาอัตโนมัติ)
+                      เลขที่เอกสาร
                     </span>
                     <button
                       type="button"
@@ -1436,7 +1721,7 @@ export default function App() {
                       title="รันเลขใบเสนอราคาและเอกสารทั้งชุดเป็นลำดับถัดไปอัตโนมัติ"
                     >
                       <RefreshCw className="w-3 h-3" />
-                      <span>รันเลขถัดไปอัตโนมัติ</span>
+                      <span>รันเลข</span>
                     </button>
                   </div>
 
@@ -1528,7 +1813,7 @@ export default function App() {
 
                   <div className="sm:col-span-4">
                     <label className="block font-semibold text-slate-700 mb-1 text-xs">
-                      จำนวนวัน Valid Until
+                      Valid Until
                     </label>
                     <div className="relative rounded-md shadow-xs">
                       <input
@@ -1579,9 +1864,6 @@ export default function App() {
                     <h2 className="text-sm font-bold text-slate-900">
                       02. รายละเอียดงานและบริการ (ซิงค์อัตโนมัติ 4 หน้า)
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      ช่องรายละเอียดสามารถกด Enter เพื่อพิมพ์แยกหลายบรรทัดได้ตามต้องการ
-                    </p>
                   </div>
                   <button
                     type="button"
@@ -1629,23 +1911,19 @@ export default function App() {
                             onChange={(e) =>
                               handleUpdateItem(item.id, { description: e.target.value })
                             }
-                            placeholder="หัวข้อรายการงาน / บริการหลัก (เช่น Motion Graphic)"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
                           />
                         </div>
 
                         <div>
                           <label className="block text-[11px] font-medium text-slate-500 mb-1">
-                            รายละเอียดขอบเขตงาน (กรอกได้หลายบรรทัด กด Enter เพื่อขึ้นบรรทัดใหม่)
+                            รายละเอียด
                           </label>
                           <textarea
                             rows={3}
                             value={item.subDescription}
                             onChange={(e) =>
                               handleUpdateItem(item.id, { subDescription: e.target.value })
-                            }
-                            placeholder={
-                              '- ความยาว 1 นาที\n- รวมพากย์เสียงและซาวด์เอฟเฟกต์\n- แก้ไขงานได้ 2 ครั้ง'
                             }
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-md text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-600"
                           />
@@ -1680,7 +1958,6 @@ export default function App() {
                               onChange={(e) =>
                                 handleUpdateItem(item.id, { unit: e.target.value })
                               }
-                              placeholder="งาน / คลิป"
                               className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md text-center"
                             />
                           </div>
@@ -1709,15 +1986,12 @@ export default function App() {
                 </div>
               </section>
 
-              {/* Card 3: 03. คำนวณเงินรวม และภาษีหัก ณ ที่จ่าย (VAT section removed per Image 2) */}
+              {/* Card 3: 03. คำนวณเงินรวม และภาษีหัก ณ ที่จ่าย */}
               <section className="bg-white border border-slate-200 rounded-lg p-5 space-y-4">
                 <div className="pb-3 border-b border-slate-200">
                   <h2 className="text-sm font-bold text-slate-900">
                     03. คำนวณเงินรวม และภาษีหัก ณ ที่จ่าย
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    เลือกเปอร์เซ็นต์ภาษีหัก ณ ที่จ่ายมาตรฐาน หรือพิมพ์กำหนดเปอร์เซ็นต์เองได้ตามต้องการ
-                  </p>
                 </div>
 
                 {/* Withholding Tax (WHT) Configuration */}
@@ -1816,7 +2090,6 @@ export default function App() {
                             type="text"
                             value={docSet.whtType}
                             onChange={(e) => updateDocFields({ whtType: e.target.value })}
-                            placeholder="เช่น ค่าบริการ / จ้างทำของ"
                             className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-md text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600"
                           />
                         </div>
@@ -1855,13 +2128,12 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 text-xs pt-2">
                   <div className="sm:col-span-7">
                     <label className="block font-semibold text-slate-700 mb-1">
-                      วิธีรับชำระเงิน (แสดงในหน้า 4 ใบเสร็จรับเงิน)
+                      วิธีรับชำระเงิน
                     </label>
                     <input
                       type="text"
                       value={docSet.paymentMethod}
                       onChange={(e) => updateDocFields({ paymentMethod: e.target.value })}
-                      placeholder="โอนเงินเข้าบัญชีธนาคาร / เช็คธนาคาร"
                       className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-md"
                     />
                   </div>
@@ -1876,7 +2148,7 @@ export default function App() {
                   </div>
                   <div className="sm:col-span-12">
                     <label className="block font-semibold text-slate-700 mb-1">
-                      หมายเหตุ / เงื่อนไขท้ายเอกสาร (ซิงค์ทั้ง 4 หน้า)
+                      หมายเหตุ / เงื่อนไขท้ายเอกสาร
                     </label>
                     <textarea
                       rows={3}
@@ -1888,28 +2160,39 @@ export default function App() {
 
                   {/* Signature Visibility Checkbox */}
                   <div className="sm:col-span-12 pt-2">
-                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg flex flex-wrap items-center justify-between gap-3">
-                      <label className="inline-flex items-center gap-2.5 text-xs font-bold text-slate-900 cursor-pointer select-none">
-                        <input
-                          type="checkbox"
-                          checked={docSet.showSellerSignature !== false}
-                          onChange={(e) =>
-                            updateDocFields({ showSellerSignature: e.target.checked })
-                          }
-                          className="w-4 h-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
-                        />
-                        <span>แปะลายเซ็นไว้ในช่องลงนาม (แสดงทั้ง 4 หน้า)</span>
-                      </label>
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <label className="inline-flex items-center gap-2.5 text-xs font-bold text-slate-900 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={docSet.showSellerSignature !== false}
+                            onChange={(e) =>
+                              updateDocFields({ showSellerSignature: e.target.checked })
+                            }
+                            className="w-4 h-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
+                          />
+                          <span>แปะลายเซ็นไว้ในช่องลงนาม (แสดงทั้ง 4 หน้า)</span>
+                        </label>
 
-                      <button
-                        type="button"
-                        onClick={() => setActiveNavTab('seller')}
-                        className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-2 cursor-pointer"
-                      >
-                        {docSet.sellerSignatureDataUrl
-                          ? 'เปลี่ยนรูปลายเซ็น'
-                          : 'อัปโหลดรูปลายเซ็น'}
-                      </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => openImageLibraryModal('signature')}
+                            className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 underline underline-offset-2 cursor-pointer"
+                          >
+                            เลือกจากคลังภาพ
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setActiveNavTab('seller')}
+                            className="text-[11px] font-semibold text-slate-600 hover:text-slate-900 underline underline-offset-2 cursor-pointer"
+                          >
+                            {docSet.sellerSignatureDataUrl
+                              ? 'เปลี่ยนรูปลายเซ็น'
+                              : 'อัปโหลดรูปลายเซ็น'}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1922,9 +2205,6 @@ export default function App() {
                     <h2 className="text-sm font-bold text-slate-900">
                       04. อัปโหลดเอกสารเพิ่มเติม (5. เอกสารเพิ่มเติม)
                     </h2>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      แยกเป็นหน้าย่อย 1. สำเนาบัตรประชาชน และ 2. สำเนาสมุดธนาคาร (หน้ากระดาษเปล่าแสดงเฉพาะรูปที่อัปโหลด)
-                    </p>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <button
@@ -2020,11 +2300,14 @@ export default function App() {
                         if (!file) return;
                         try {
                           const dataUrl = await fileToResizedJpegDataUrl(file, 1100, 1450);
+                          const cleanName =
+                            file.name.replace(/\.[^.]+$/, '') || '1. สำเนาบัตรประชาชน';
                           updateDocFields({ idCardImageDataUrl: dataUrl });
+                          handleAddAssetToLibrary('idCard', cleanName, dataUrl, false);
                           localStorage.setItem('syncdoc_id_card_v1', dataUrl);
                           setPreviewLayout('single');
                           setActiveDocPage('attachmentIdCard');
-                          showToast('อัปโหลด 1. สำเนาบัตรประชาชน เรียบร้อยแล้ว');
+                          showToast('อัปโหลด 1. สำเนาบัตรประชาชน และบันทึกเข้าคลังภาพเรียบร้อยแล้ว');
                         } catch (err) {
                           showToast(
                             err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ',
@@ -2047,6 +2330,15 @@ export default function App() {
                           : 'อัปโหลดสำเนาบัตรประชาชน'}
                       </span>
                     </button>
+
+                    <InlineAssetQuickPicker
+                      category="idCard"
+                      assets={userAssets}
+                      currentDataUrl={docSet.idCardImageDataUrl}
+                      onSelectDataUrl={(dataUrl) => handleSelectAssetForDoc('idCard', dataUrl)}
+                      onDeleteAsset={handleDeleteAssetFromLibrary}
+                      onOpenLibraryModal={openImageLibraryModal}
+                    />
                   </div>
 
                   {/* หน้าย่อย 2. สำเนาสมุดธนาคาร */}
@@ -2108,11 +2400,14 @@ export default function App() {
                         if (!file) return;
                         try {
                           const dataUrl = await fileToResizedJpegDataUrl(file, 1100, 1450);
+                          const cleanName =
+                            file.name.replace(/\.[^.]+$/, '') || '2. สำเนาสมุดธนาคาร';
                           updateDocFields({ bankBookImageDataUrl: dataUrl });
+                          handleAddAssetToLibrary('bankBook', cleanName, dataUrl, false);
                           localStorage.setItem('syncdoc_bank_book_v1', dataUrl);
                           setPreviewLayout('single');
                           setActiveDocPage('attachmentBankBook');
-                          showToast('อัปโหลด 2. สำเนาสมุดธนาคาร เรียบร้อยแล้ว');
+                          showToast('อัปโหลด 2. สำเนาสมุดธนาคาร และบันทึกเข้าคลังภาพเรียบร้อยแล้ว');
                         } catch (err) {
                           showToast(
                             err instanceof Error ? err.message : 'อัปโหลดรูปไม่สำเร็จ',
@@ -2135,6 +2430,15 @@ export default function App() {
                           : 'อัปโหลดสำเนาสมุดธนาคาร'}
                       </span>
                     </button>
+
+                    <InlineAssetQuickPicker
+                      category="bankBook"
+                      assets={userAssets}
+                      currentDataUrl={docSet.bankBookImageDataUrl}
+                      onSelectDataUrl={(dataUrl) => handleSelectAssetForDoc('bankBook', dataUrl)}
+                      onDeleteAsset={handleDeleteAssetFromLibrary}
+                      onOpenLibraryModal={openImageLibraryModal}
+                    />
                   </div>
                 </div>
 
@@ -2151,7 +2455,7 @@ export default function App() {
                 >
                   <Download className="w-4 h-4" />
                   <span>
-                    ดาวน์โหลดครบทุกหน้าพร้อมกัน (ใบเสนอราคา ถึง เอกสารเพิ่มเติม)
+                    ดาวน์โหลดครบทุกหน้า
                   </span>
                 </button>
               </section>
@@ -2399,6 +2703,20 @@ export default function App() {
           )
         )}
       </div>
+
+      {/* Image Library Modal */}
+      <ImageLibraryModal
+        isOpen={isLibraryModalOpen}
+        initialCategory={libraryModalCategory}
+        assets={userAssets}
+        docSet={docSet}
+        onClose={() => setIsLibraryModalOpen(false)}
+        onSelectAssetForDoc={(cat, dataUrl) => handleSelectAssetForDoc(cat, dataUrl, true)}
+        onUploadNewAsset={(cat, name, dataUrl, applyNow) =>
+          handleAddAssetToLibrary(cat, name, dataUrl, applyNow)
+        }
+        onDeleteAsset={handleDeleteAssetFromLibrary}
+      />
 
       {/* Email / Cloud Auth Modal */}
       <AuthModal

@@ -1,17 +1,31 @@
 import React, { useState, useRef } from 'react';
-import { Check, Upload, Trash2, Image as ImageIcon } from 'lucide-react';
-import { BLUEPRINT_CONSTRAINTS, DocumentSetRecord } from '../types/billing';
+import { Check, Upload, Trash2, Image as ImageIcon, FolderOpen } from 'lucide-react';
+import {
+  AssetCategory,
+  BLUEPRINT_CONSTRAINTS,
+  DocumentSetRecord,
+  UserAssetRecord,
+} from '../types/billing';
 import { fileToResizedJpegDataUrl, fileToResizedPngDataUrl } from '../utils/imageHelper';
+import { InlineAssetQuickPicker } from './ImageLibraryModal';
 
 interface SellerProfileViewProps {
   docSet: DocumentSetRecord;
+  userAssets: UserAssetRecord[];
   onUpdateSellerFields: (fields: Partial<DocumentSetRecord>) => void;
+  onAddAssetToLibrary: (category: AssetCategory, name: string, dataUrl: string) => void;
+  onDeleteAssetFromLibrary: (assetId: string) => void;
+  onOpenLibraryModal: (category?: AssetCategory | 'all') => void;
   onReturnToEditor: () => void;
 }
 
 export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
   docSet,
+  userAssets,
   onUpdateSellerFields,
+  onAddAssetToLibrary,
+  onDeleteAssetFromLibrary,
+  onOpenLibraryModal,
   onReturnToEditor,
 }) => {
   const [savedNotice, setSavedNotice] = useState(false);
@@ -25,7 +39,9 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const dataUrl = await fileToResizedPngDataUrl(file, 360, 160);
+    const cleanName = file.name.replace(/\.[^.]+$/, '') || 'โลโก้ร้าน';
     onUpdateSellerFields({ sellerLogoDataUrl: dataUrl });
+    onAddAssetToLibrary('logo', cleanName, dataUrl);
     try {
       localStorage.setItem('syncdoc_seller_logo_v1', dataUrl);
     } catch {
@@ -38,7 +54,9 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     const dataUrl = await fileToResizedPngDataUrl(file, 640, 280);
+    const cleanName = file.name.replace(/\.[^.]+$/, '') || 'ลายเซ็น';
     onUpdateSellerFields({ sellerSignatureDataUrl: dataUrl });
+    onAddAssetToLibrary('signature', cleanName, dataUrl);
     try {
       localStorage.setItem('syncdoc_seller_signature_v1', dataUrl);
     } catch {
@@ -50,8 +68,10 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
   const handleUploadIdCard = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const dataUrl = await fileToResizedJpegDataUrl(file, 960, 580);
+    const dataUrl = await fileToResizedJpegDataUrl(file, 1100, 1450);
+    const cleanName = file.name.replace(/\.[^.]+$/, '') || 'สำเนาบัตรประชาชน';
     onUpdateSellerFields({ idCardImageDataUrl: dataUrl });
+    onAddAssetToLibrary('idCard', cleanName, dataUrl);
     try {
       localStorage.setItem('syncdoc_id_card_v1', dataUrl);
     } catch {
@@ -63,8 +83,10 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
   const handleUploadBankBook = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const dataUrl = await fileToResizedJpegDataUrl(file, 960, 580);
+    const dataUrl = await fileToResizedJpegDataUrl(file, 1100, 1450);
+    const cleanName = file.name.replace(/\.[^.]+$/, '') || 'สำเนาสมุดธนาคาร';
     onUpdateSellerFields({ bankBookImageDataUrl: dataUrl });
+    onAddAssetToLibrary('bankBook', cleanName, dataUrl);
     try {
       localStorage.setItem('syncdoc_bank_book_v1', dataUrl);
     } catch {
@@ -121,17 +143,27 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
             ข้อมูลผู้ขาย โลโก้ร้าน ลายเซ็น และเอกสารแนบ (Seller Profile & Assets)
           </h1>
           <p className="text-sm text-slate-600 mt-1">
-            อัปโหลดโลโก้ร้าน ลายเซ็น สำเนาบัตรประชาชน และหน้าสมุดบัญชีธนาคาร เพื่อซิงค์และดาวน์โหลดพร้อมกันทุกหน้า
+            อัปโหลดหรือสลับเปลี่ยนรูปภาพจากคลังภาพที่เคยอัปโหลดไว้ เพื่อซิงค์และดาวน์โหลดพร้อมกันทุกหน้า
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={onReturnToEditor}
-          className="px-4 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-        >
-          กลับไปหน้าพรีวิวเอกสารทั้งหมด
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => onOpenLibraryModal('all')}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors cursor-pointer"
+          >
+            <FolderOpen className="w-4 h-4" />
+            <span>เปิดคลังรูปภาพ ({userAssets.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={onReturnToEditor}
+            className="px-4 py-2 text-xs font-semibold text-slate-800 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap cursor-pointer"
+          >
+            กลับไปหน้าพรีวิวเอกสารทั้งหมด
+          </button>
+        </div>
       </div>
 
       <form
@@ -197,6 +229,22 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
               <Upload className="w-3.5 h-3.5 text-blue-700" />
               <span>เลือกไฟล์รูปโลโก้ร้าน...</span>
             </button>
+
+            <InlineAssetQuickPicker
+              category="logo"
+              assets={userAssets}
+              currentDataUrl={docSet.sellerLogoDataUrl}
+              onSelectDataUrl={(dataUrl) => {
+                onUpdateSellerFields({ sellerLogoDataUrl: dataUrl });
+                try {
+                  localStorage.setItem('syncdoc_seller_logo_v1', dataUrl);
+                } catch {
+                  // Ignore
+                }
+              }}
+              onDeleteAsset={onDeleteAssetFromLibrary}
+              onOpenLibraryModal={onOpenLibraryModal}
+            />
           </div>
 
           {/* Authorized Signature Upload */}
@@ -256,6 +304,22 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
               <Upload className="w-3.5 h-3.5 text-blue-700" />
               <span>เลือกไฟล์รูปลายเซ็น...</span>
             </button>
+
+            <InlineAssetQuickPicker
+              category="signature"
+              assets={userAssets}
+              currentDataUrl={docSet.sellerSignatureDataUrl}
+              onSelectDataUrl={(dataUrl) => {
+                onUpdateSellerFields({ sellerSignatureDataUrl: dataUrl });
+                try {
+                  localStorage.setItem('syncdoc_seller_signature_v1', dataUrl);
+                } catch {
+                  // Ignore
+                }
+              }}
+              onDeleteAsset={onDeleteAssetFromLibrary}
+              onOpenLibraryModal={onOpenLibraryModal}
+            />
 
             <label className="flex items-center gap-2 pt-2 border-t border-slate-200 text-xs font-semibold text-slate-800 cursor-pointer select-none">
               <input
@@ -327,6 +391,22 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
               <Upload className="w-3.5 h-3.5 text-purple-700" />
               <span>เลือกไฟล์รูปสำเนาบัตรประชาชน...</span>
             </button>
+
+            <InlineAssetQuickPicker
+              category="idCard"
+              assets={userAssets}
+              currentDataUrl={docSet.idCardImageDataUrl}
+              onSelectDataUrl={(dataUrl) => {
+                onUpdateSellerFields({ idCardImageDataUrl: dataUrl });
+                try {
+                  localStorage.setItem('syncdoc_id_card_v1', dataUrl);
+                } catch {
+                  // Ignore
+                }
+              }}
+              onDeleteAsset={onDeleteAssetFromLibrary}
+              onOpenLibraryModal={onOpenLibraryModal}
+            />
           </div>
 
           {/* Bank Book Copy Upload (Page 5) */}
@@ -386,6 +466,22 @@ export const SellerProfileView: React.FC<SellerProfileViewProps> = ({
               <Upload className="w-3.5 h-3.5 text-purple-700" />
               <span>เลือกไฟล์รูปหน้าสมุดธนาคาร...</span>
             </button>
+
+            <InlineAssetQuickPicker
+              category="bankBook"
+              assets={userAssets}
+              currentDataUrl={docSet.bankBookImageDataUrl}
+              onSelectDataUrl={(dataUrl) => {
+                onUpdateSellerFields({ bankBookImageDataUrl: dataUrl });
+                try {
+                  localStorage.setItem('syncdoc_bank_book_v1', dataUrl);
+                } catch {
+                  // Ignore
+                }
+              }}
+              onDeleteAsset={onDeleteAssetFromLibrary}
+              onOpenLibraryModal={onOpenLibraryModal}
+            />
           </div>
         </div>
 

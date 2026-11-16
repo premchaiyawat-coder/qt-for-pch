@@ -156,7 +156,24 @@ export const BLUEPRINT_CONSTRAINTS = {
     subDescriptionMax: 500,
     unitMax: 50,
   },
+  USER_ASSET: {
+    categoryMax: 30,
+    nameMax: 150,
+    dataUrlMax: 350000,
+  },
 } as const;
+
+export type AssetCategory = 'logo' | 'signature' | 'idCard' | 'bankBook';
+
+export interface UserAssetRecord {
+  id: string;
+  ownerId: string;
+  category: AssetCategory;
+  name: string;
+  dataUrl: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
 
 export interface CustomerRecord {
   id: string;

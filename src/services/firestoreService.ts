@@ -13,12 +13,14 @@ import {
 } from 'firebase/firestore';
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import {
+  AssetCategory,
   BLUEPRINT_CONSTRAINTS,
   clampNumber,
   clampString,
   CustomerRecord,
   DocumentSetRecord,
   sanitizeId,
+  UserAssetRecord,
   WorkLineItem,
 } from '../types/billing';
 
@@ -401,3 +403,97 @@ export async function deleteDocumentSetFromFirestore(
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
+
+export function subscribeUserAssets(
+  uid: string,
+  onData: (assets: UserAssetRecord[]) => void
+): Unsubscribe {
+  const path = 'userAssets';
+  const q = query(collection(db, path), where('ownerId', '==', uid));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: UserAssetRecord[] = snapshot.docs.map((docSnap) => {
+        const d = docSnap.data();
+        const rawCat = String(d.category || 'logo');
+        const category: AssetCategory =
+          rawCat === 'signature' || rawCat === 'idCard' || rawCat === 'bankBook'
+            ? rawCat
+            : 'logo';
+        return {
+          id: docSnap.id,
+          ownerId: String(d.ownerId || uid),
+          category,
+          name: String(d.name || 'รูปภาพที่อัปโหลด'),
+          dataUrl: String(d.dataUrl || ''),
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+        };
+      });
+      list.sort((a, b) => getTimestampMillis(b.updatedAt) - getTimestampMillis(a.updatedAt));
+      onData(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+  );
+}
+
+export async function saveUserAssetToFirestore(
+  uid: string,
+  asset: UserAssetRecord,
+  isExistingInCloud: boolean
+): Promise<string> {
+  const assetId = scopeCloudId(uid, asset.id);
+  const path = `userAssets/${assetId}`;
+  const A = BLUEPRINT_CONSTRAINTS.USER_ASSET;
+
+  const validCategory: AssetCategory =
+    asset.category === 'signature' || asset.category === 'idCard' || asset.category === 'bankBook'
+      ? asset.category
+      : 'logo';
+
+  const mutableFields = {
+    category: validCategory,
+    name: clampString(asset.name, A.nameMax, 'รูปภาพที่อัปโหลด'),
+    dataUrl: clampString(asset.dataUrl, A.dataUrlMax, ''),
+    updatedAt: serverTimestamp(),
+  };
+
+  if (!mutableFields.dataUrl) {
+    return assetId;
+  }
+
+  try {
+    if (isExistingInCloud) {
+      await updateDoc(doc(db, 'userAssets', assetId), mutableFields);
+    } else {
+      await setDoc(doc(db, 'userAssets', assetId), {
+        ownerId: uid,
+        ...mutableFields,
+        createdAt: serverTimestamp(),
+      });
+    }
+    return assetId;
+  } catch (error) {
+    handleFirestoreError(
+      error,
+      isExistingInCloud ? OperationType.UPDATE : OperationType.CREATE,
+      path
+    );
+  }
+}
+
+export async function deleteUserAssetFromFirestore(
+  uid: string,
+  assetIdRaw: string
+): Promise<void> {
+  const assetId = scopeCloudId(uid, assetIdRaw);
+  const path = `userAssets/${assetId}`;
+  try {
+    await deleteDoc(doc(db, 'userAssets', assetId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+

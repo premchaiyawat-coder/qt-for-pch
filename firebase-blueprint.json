@@ -440,6 +440,55 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "UserAsset": {
+      "title": "UserAsset",
+      "description": "Uploaded image asset in the user's image library (logo, signature, idCard, bankBook).",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "UID of the authenticated owner."
+        },
+        "category": {
+          "type": "string",
+          "enum": ["logo", "signature", "idCard", "bankBook"],
+          "maxLength": 30,
+          "description": "Asset category."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 150,
+          "description": "Display name of the uploaded image."
+        },
+        "dataUrl": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 350000,
+          "description": "Base64 data URL of the image."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": [
+        "ownerId",
+        "category",
+        "name",
+        "dataUrl",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -460,6 +509,12 @@
         "$ref": "#/entities/DocumentItem"
       },
       "description": "Line items belonging to a specific DocumentSet."
+    },
+    "/userAssets/{assetId}": {
+      "schema": {
+        "$ref": "#/entities/UserAsset"
+      },
+      "description": "Uploaded image library assets (logos, signatures, ID cards, bank books) scoped strictly to each authenticated user."
     }
   }
 }
