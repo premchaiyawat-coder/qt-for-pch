@@ -1244,7 +1244,7 @@ export default function App() {
           }}
           className="font-display text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
         >
-          SyncDoc Billing Suite
+          Bill4Me
         </a>
 
         {/* Zone 2: 4 concise single-line navigation links */}
@@ -1307,25 +1307,65 @@ export default function App() {
           </a>
         </nav>
 
-        {/* Zone 3: 1 Primary Action Button */}
+        {/* Zone 3: Auth / Log in Action Button */}
         <div className="flex items-center gap-3 shrink-0">
-          <button
-            type="button"
-            disabled={isExportingPdf}
-            onClick={() => handleDownloadSelectedPdf()}
-            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>
-              {isExportingPdf
-                ? exportStatusText || 'กำลังสร้างไฟล์ PDF...'
-                : `ดาวน์โหลด PDF ที่เลือก (${selectedPdfPages.length} หน้า)`}
-            </span>
-          </button>
+          {currentUser ? (
+            <div className="inline-flex items-center gap-2 text-xs text-slate-600">
+              <span
+                className="inline-flex items-center gap-1.5 truncate max-w-[170px]"
+                title={currentUser.email || ''}
+              >
+                <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                <span className="truncate font-medium text-slate-800">{currentUser.email}</span>
+              </span>
+              {cloudSyncState === 'syncing' ? (
+                <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 whitespace-nowrap">
+                  <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                  <span>กำลังซิงค์คลาวด์...</span>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!currentUser) return;
+                    if (savedDocSets.length > 0 && cloudDocSetIdsRef.current.size > 0) {
+                      await applyCloudDocSetToWorkspace(currentUser.uid, savedDocSets[0]);
+                      showToast('ดึงข้อมูลล่าสุดจาก Cloud Firestore เรียบร้อยแล้ว');
+                    } else {
+                      await pushCurrentWorkspaceToCloud(currentUser.uid, docSetRef.current);
+                      showToast('ซิงค์ข้อมูลปัจจุบันขึ้น Cloud Firestore เรียบร้อยแล้ว');
+                    }
+                  }}
+                  className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 whitespace-nowrap cursor-pointer transition-colors"
+                  title="คลิกเพื่อดึงข้อมูลล่าสุดจากคลาวด์ทันที"
+                >
+                  <Check className="w-2.5 h-2.5" />
+                  <span>ซิงค์คลาวด์อัตโนมัติ</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <LogOut className="w-3 h-3" />
+                <span>ออก</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setIsAuthModalOpen(true)}
+              className="inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Log in</span>
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Secondary Workspace Bar: Mobile Nav + Selective PDF Checkboxes + Cloud Sync */}
+      {/* Secondary Workspace Bar: Mobile Nav + Selective PDF Checkboxes + PDF Download */}
       <div className="no-print bg-slate-50 border-b border-slate-200 px-6 py-2.5">
         <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-4">
           {/* Mobile Navigation Links */}
@@ -1356,7 +1396,7 @@ export default function App() {
           {/* Selective Page Export Checkboxes */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="font-semibold text-slate-700 mr-1 whitespace-nowrap shrink-0">
-              ติ๊กเลือกหน้าดาวน์โหลด PDF:
+              เลือกหน้าดาวน์โหลด PDF:
             </span>
 
             {DOCUMENT_PAGES.map((page) => {
@@ -1393,7 +1433,7 @@ export default function App() {
             </button>
           </div>
 
-          {/* Workspace Action Utilities: Save, New, Print, Cloud Auth */}
+          {/* Workspace Action Utilities: New, Save, Print, Download PDF */}
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1416,16 +1456,6 @@ export default function App() {
 
             <button
               type="button"
-              onClick={() => openImageLibraryModal('all')}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              title="เปิดคลังรูปภาพที่เคยอัปโหลดไว้เพื่อสลับโลโก้ ลายเซ็น หรือเอกสารเพิ่มเติม"
-            >
-              <FolderOpen className="w-3.5 h-3.5" />
-              <span>คลังรูปภาพ ({userAssets.length})</span>
-            </button>
-
-            <button
-              type="button"
               onClick={() => window.print()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               title="สั่งพิมพ์หรือบันทึกเป็น PDF ผ่านระบบพิมพ์ของเบราว์เซอร์"
@@ -1434,56 +1464,19 @@ export default function App() {
               <span>พิมพ์หน้าที่เลือก</span>
             </button>
 
-            {currentUser ? (
-              <div className="inline-flex items-center gap-2 pl-2 border-l border-slate-300 text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1.5 truncate max-w-[170px]" title={currentUser.email || ''}>
-                  <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                  <span className="truncate font-medium text-slate-800">{currentUser.email}</span>
-                </span>
-                {cloudSyncState === 'syncing' ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 whitespace-nowrap">
-                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
-                    <span>กำลังซิงค์คลาวด์...</span>
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!currentUser) return;
-                      if (savedDocSets.length > 0 && cloudDocSetIdsRef.current.size > 0) {
-                        await applyCloudDocSetToWorkspace(currentUser.uid, savedDocSets[0]);
-                        showToast('ดึงข้อมูลล่าสุดจาก Cloud Firestore เรียบร้อยแล้ว');
-                      } else {
-                        await pushCurrentWorkspaceToCloud(currentUser.uid, docSetRef.current);
-                        showToast('ซิงค์ข้อมูลปัจจุบันขึ้น Cloud Firestore เรียบร้อยแล้ว');
-                      }
-                    }}
-                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 whitespace-nowrap cursor-pointer transition-colors"
-                    title="คลิกเพื่อดึงข้อมูลล่าสุดจากคลาวด์ทันที"
-                  >
-                    <Check className="w-2.5 h-2.5" />
-                    <span>ซิงค์คลาวด์อัตโนมัติ</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={handleSignOut}
-                  className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-100 whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  <LogOut className="w-3 h-3" />
-                  <span>ออก</span>
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setIsAuthModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
-              >
-                <Mail className="w-3.5 h-3.5" />
-                <span>เข้าสู่ระบบด้วย Email / คลาวด์</span>
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={isExportingPdf}
+              onClick={() => handleDownloadSelectedPdf()}
+              className="inline-flex items-center gap-2 px-4 py-1.5 text-xs font-semibold text-white bg-blue-700 rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-60 whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>
+                {isExportingPdf
+                  ? exportStatusText || 'กำลังสร้างไฟล์ PDF...'
+                  : `ดาวน์โหลด PDF ที่เลือก (${selectedPdfPages.length} หน้า)`}
+              </span>
+            </button>
           </div>
         </div>
       </div>
@@ -1862,7 +1855,7 @@ export default function App() {
                 <div className="flex items-center justify-between pb-3 border-b border-slate-200">
                   <div>
                     <h2 className="text-sm font-bold text-slate-900">
-                      02. รายละเอียดงานและบริการ (ซิงค์อัตโนมัติ 4 หน้า)
+                      02. รายละเอียดงาน
                     </h2>
                   </div>
                   <button
@@ -2203,7 +2196,7 @@ export default function App() {
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-200">
                   <div>
                     <h2 className="text-sm font-bold text-slate-900">
-                      04. อัปโหลดเอกสารเพิ่มเติม (5. เอกสารเพิ่มเติม)
+                      04. อัปโหลดเอกสารเพิ่มเติม
                     </h2>
                   </div>
                   <div className="flex items-center gap-1.5">
